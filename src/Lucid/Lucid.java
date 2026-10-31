@@ -46,8 +46,11 @@ public class Lucid extends JPanel implements Runnable {
     private Mat4x4 projMatrix;
     // private double rotationAngle = 0.0; // Rotation Angle in Rads. Deprecated 
     
-    // A Directional Light Source pointing from top-left at the rendered scene
-    private final Vec3d lightDirection = new Vec3d(0.0, 1.0, -1.0).normalize(); 
+    private static final double AMBIENT_LIGHT = 0.25;
+    private static final double KEY_LIGHT_STRENGTH = 0.55;
+    private static final double FILL_LIGHT_STRENGTH = 0.30;
+    private final Vec3d keyLightDirection = new Vec3d(0.0, 1.0, -1.0).normalize();
+    private final Vec3d fillLightDirection = new Vec3d(1.0, 0.0, -1.0).normalize();
     
     // Camera and Input State Variables
     private Vec3d cameraPos = new Vec3d(0.0, 0.0, -5.0); // Positioned 5 units back from Origin
@@ -245,8 +248,7 @@ public class Lucid extends JPanel implements Runnable {
             // If dot product is negative, triangle faces the camera
             if (normal.dot(cameraRay) < 0.0) {
 
-                //Directional Flat Shading (Lambertian lighting model)
-                double lightIntensity = Math.max(0.1, normal.dot(lightDirection));
+                double lightIntensity = calculateLightIntensity(normal);
                 int shadedColor = applyShading(tri.color, lightIntensity);
 
                 List<Vec3d> clipped = new ArrayList<>();
@@ -455,6 +457,14 @@ public class Lucid extends JPanel implements Runnable {
     }
 
     // Utility: Multiplies RGB color components by lighting intensity
+    private double calculateLightIntensity(Vec3d normal) {
+        double keyLight = Math.max(0.0, normal.dot(keyLightDirection));
+        double fillLight = Math.max(0.0, normal.dot(fillLightDirection));
+        return Math.min(1.0, AMBIENT_LIGHT
+                + KEY_LIGHT_STRENGTH * keyLight
+                + FILL_LIGHT_STRENGTH * fillLight);
+    }
+
     private int applyShading(int colorHex, double intensity) {
         int r = (int) (((colorHex >> 16) & 0xFF) * intensity);
         int g = (int) (((colorHex >> 8) & 0xFF) * intensity);

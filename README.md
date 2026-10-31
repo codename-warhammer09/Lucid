@@ -14,8 +14,8 @@ implemented.
 The engine currently:
 
 - Transforms and projects a triangle mesh in software.
-- Clips geometry to near and far depth planes, shades faces with directional
-  lighting, and uses a depth buffer to resolve visibility.
+- Clips geometry to near and far depth planes, shades faces with ambient and
+  two directional lights, and uses a depth buffer to resolve visibility.
 - Renders a sample cube at 320 x 240 and scales the image 3x for display in a
   960 x 720 Swing window.
 - Provides a keyboard-controlled camera for walking, strafing, looking around,
