@@ -74,4 +74,14 @@ public Vec3d transformVec3d(Vec3d input){
         matrix.m[3][3] = 1.0;
         return matrix;
     }
+    public static Mat4x4 makeRotationZ(double angleRad){
+        Mat4x4 matrix = new Mat4x4();
+        matrix.m[0][0] = Math.cos(angleRad);
+        matrix.m[0][1] = Math.sin(angleRad);
+        matrix.m[1][0] = -Math.sin(angleRad);
+        matrix.m[1][1] = Math.cos(angleRad);
+        matrix.m[2][2] = 1.0;
+        matrix.m[3][3] = 1.0;
+        return matrix;
+    }
 }

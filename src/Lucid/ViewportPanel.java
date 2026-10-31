@@ -1,0 +1,166 @@
+package Lucid;
+
+import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import javax.swing.JPanel;
+
+@SuppressWarnings("serial")
+public final class ViewportPanel extends JPanel {
+    private final Scene scene;
+    private final Camera camera;
+    private final SceneRenderer renderer;
+    private final Runnable selectionChanged;
+    private String selectedId;
+    private boolean keyForward;
+    private boolean keyBackward;
+    private boolean keyLeft;
+    private boolean keyRight;
+    private boolean turnLeft;
+    private boolean turnRight;
+    private boolean lookUp;
+    private boolean lookDown;
+    private boolean rise;
+    private boolean fall;
+    private boolean sprint;
+    private long lastUpdate = System.nanoTime();
+
+    public ViewportPanel(Scene scene, Camera camera, SceneRenderer renderer,
+            Runnable selectionChanged) {
+        this.scene = scene;
+        this.camera = camera;
+        this.renderer = renderer;
+        this.selectionChanged = selectionChanged;
+        setBackground(new Color(0x111522));
+        setFocusable(true);
+        setPreferredSize(new Dimension(640, 480));
+        addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent event) {
+                requestFocusInWindow();
+                selectAt(event.getX(), event.getY());
+            }
+        });
+        addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent event) {
+                if (event.getKeyCode() == KeyEvent.VK_R) {
+                    camera.reset();
+                    repaint();
+                } else {
+                    setKey(event.getKeyCode(), true);
+                }
+            }
+
+            @Override
+            public void keyReleased(KeyEvent event) {
+                setKey(event.getKeyCode(), false);
+            }
+        });
+        addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent event) {
+                clearKeys();
+            }
+        });
+    }
+
+    public void setSelectedId(String id) {
+        selectedId = id;
+        repaint();
+    }
+
+    public String getSelectedId() {
+        return selectedId;
+    }
+
+    public void updateCamera() {
+        long now = System.nanoTime();
+        double delta = Math.min(0.05, (now - lastUpdate) / 1_000_000_000.0);
+        lastUpdate = now;
+        double speed = (sprint ? 6.0 : 3.0) * delta;
+        double turn = 1.8 * delta;
+        if (turnLeft) camera.yaw -= turn;
+        if (turnRight) camera.yaw += turn;
+        camera.yaw = Math.IEEEremainder(camera.yaw, Math.PI * 2.0);
+        Vec3d forward = camera.forward();
+        Vec3d rightVector = camera.right();
+        double moveX = (keyForward ? forward.x : 0.0) - (keyBackward ? forward.x : 0.0)
+                - (keyLeft ? rightVector.x : 0.0) + (keyRight ? rightVector.x : 0.0);
+        double moveZ = (keyForward ? forward.z : 0.0) - (keyBackward ? forward.z : 0.0)
+                - (keyLeft ? rightVector.z : 0.0) + (keyRight ? rightVector.z : 0.0);
+        double length = Math.sqrt(moveX * moveX + moveZ * moveZ);
+        if (length > 0.0) {
+            camera.position.x += moveX / length * speed;
+            camera.position.z += moveZ / length * speed;
+        }
+        if (rise) camera.position.y += speed;
+        if (fall) camera.position.y -= speed;
+        if (lookUp) camera.pitch = Math.max(-Math.PI / 2.0 + 0.01, camera.pitch - turn);
+        if (lookDown) camera.pitch = Math.min(Math.PI / 2.0 - 0.01, camera.pitch + turn);
+    }
+
+    @Override
+    protected void paintComponent(Graphics graphics) {
+        super.paintComponent(graphics);
+        renderer.render(scene, camera, selectedId);
+        double scale = Math.min((double) getWidth() / SceneRenderer.WIDTH,
+                (double) getHeight() / SceneRenderer.HEIGHT);
+        int width = (int) (SceneRenderer.WIDTH * scale);
+        int height = (int) (SceneRenderer.HEIGHT * scale);
+        int x = (getWidth() - width) / 2;
+        int y = (getHeight() - height) / 2;
+        renderer.drawScaled((Graphics2D) graphics, x, y, width, height);
+    }
+
+    private void selectAt(int x, int y) {
+        double scale = Math.min((double) getWidth() / SceneRenderer.WIDTH,
+                (double) getHeight() / SceneRenderer.HEIGHT);
+        int width = (int) (SceneRenderer.WIDTH * scale);
+        int height = (int) (SceneRenderer.HEIGHT * scale);
+        int left = (getWidth() - width) / 2;
+        int top = (getHeight() - height) / 2;
+        if (scale <= 0.0 || x < left || x >= left + width || y < top || y >= top + height) {
+            return;
+        }
+        renderer.render(scene, camera, selectedId);
+        int imageX = (int) ((x - left) / scale);
+        int imageY = (int) ((y - top) / scale);
+        String picked = renderer.pick(scene, imageX, imageY);
+        if (picked != null || selectedId != null) {
+            selectedId = picked;
+            selectionChanged.run();
+            repaint();
+        }
+    }
+
+    private void setKey(int keyCode, boolean pressed) {
+        switch (keyCode) {
+            case KeyEvent.VK_W: keyForward = pressed; break;
+            case KeyEvent.VK_S: keyBackward = pressed; break;
+            case KeyEvent.VK_A: keyLeft = pressed; break;
+            case KeyEvent.VK_D: keyRight = pressed; break;
+            case KeyEvent.VK_LEFT: turnLeft = pressed; break;
+            case KeyEvent.VK_RIGHT: turnRight = pressed; break;
+            case KeyEvent.VK_UP: lookUp = pressed; break;
+            case KeyEvent.VK_DOWN: lookDown = pressed; break;
+            case KeyEvent.VK_E: rise = pressed; break;
+            case KeyEvent.VK_Q: fall = pressed; break;
+            case KeyEvent.VK_SHIFT: sprint = pressed; break;
+            default: break;
+        }
+    }
+
+    private void clearKeys() {
+        keyForward = keyBackward = keyLeft = keyRight = false;
+        turnLeft = turnRight = lookUp = lookDown = false;
+        rise = fall = sprint = false;
+    }
+}
