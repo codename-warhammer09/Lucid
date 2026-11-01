@@ -14,6 +14,9 @@ import javax.swing.JPanel;
 
 @SuppressWarnings("serial")
 public final class ViewportPanel extends JPanel {
+    // The viewport is the user-facing window into the world. It stores a reference
+    // to the scene and camera so frames can be refreshed and interaction can update
+    // either without extra plumbing.
     private final Scene scene;
     private final Camera camera;
     private final SceneRenderer renderer;
@@ -81,6 +84,8 @@ public final class ViewportPanel extends JPanel {
         return selectedId;
     }
 
+    // Updates the camera based on held keys. This turns the viewport into a simple
+    // first-person camera controller without needing a separate physics engine.
     public void updateCamera() {
         long now = System.nanoTime();
         double delta = Math.min(0.05, (now - lastUpdate) / 1_000_000_000.0);
@@ -120,6 +125,9 @@ public final class ViewportPanel extends JPanel {
         renderer.drawScaled((Graphics2D) graphics, x, y, width, height);
     }
 
+    // Converts a mouse click into an object selection by reusing the renderer's
+    // objectBuffer. The click coordinates are first mapped from the scaled panel
+    // space back to the internal 320x240 render buffer.
     private void selectAt(int x, int y) {
         double scale = Math.min((double) getWidth() / SceneRenderer.WIDTH,
                 (double) getHeight() / SceneRenderer.HEIGHT);
@@ -141,6 +149,9 @@ public final class ViewportPanel extends JPanel {
         }
     }
 
+    // Keyboard state uses a set of booleans (forward, backward, turn left, etc.).
+    // These are updated as keys are pressed and released so motion feels smooth and
+    // continuous while the camera is controlled in real time.
     private void setKey(int keyCode, boolean pressed) {
         switch (keyCode) {
             case KeyEvent.VK_W: keyForward = pressed; break;

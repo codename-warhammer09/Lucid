@@ -8,6 +8,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+/**
+ * Converts the scene into a 2D image by repeatedly transforming geometry and
+ * drawing it into a frame buffer.
+ *
+ * This is the heart of the engine. It takes 3D mesh data, positions the camera,
+ * applies transforms, checks which triangles are visible, shades them based on
+ * lights, and writes the final pixel colors into a buffered image.
+ */
 public final class SceneRenderer {
     public static final int WIDTH = 320;
     public static final int HEIGHT = 240;
@@ -15,21 +23,29 @@ public final class SceneRenderer {
     private static final double FAR_PLANE = 100.0;
     private static final double AMBIENT_LIGHT = 0.22;
 
+    // The frame buffer is the image that will ultimately be displayed in the UI.
     private final BufferedImage frameBuffer =
             new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
     private final int[] pixels = ((DataBufferInt) frameBuffer.getRaster()
             .getDataBuffer()).getData();
+    // The z-buffer tracks the closest visible depth at each pixel so far. This is
+    // how the renderer decides which triangle wins when surfaces overlap.
     private final double[] zBuffer = new double[WIDTH * HEIGHT];
+    // The object buffer stores which object owns a given pixel, which is what makes
+    // clicking on the viewport possible.
     private final int[] objectBuffer = new int[WIDTH * HEIGHT];
     private final Mat4x4 projection = Mat4x4.makeProjection(
             90.0, (double) WIDTH / HEIGHT, NEAR_PLANE, FAR_PLANE);
 
+    // This renders a whole frame from the given scene and camera.
     public BufferedImage render(Scene scene, Camera camera, String selectedId) {
         List<SceneObject> objects = scene.getObjects();
         Arrays.fill(pixels, 0x111522);
         Arrays.fill(zBuffer, Double.MAX_VALUE);
         Arrays.fill(objectBuffer, -1);
 
+        // Camera rotation is split into yaw and pitch so movement controls can be
+        // modeled naturally: turn left/right and look up/down.
         Mat4x4 yaw = Mat4x4.makeRotationY(camera.yaw);
         Mat4x4 pitch = Mat4x4.makeRotationX(-camera.pitch);
         for (int i = 0; i < objects.size(); i++) {
@@ -49,6 +65,8 @@ public final class SceneRenderer {
         return frameBuffer;
     }
 
+    // Reads the object id under a given pixel in the render buffer. This is used by
+    // the viewport when the user clicks to select an object.
     public String pick(Scene scene, int x, int y) {
         if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) return null;
         int objectIndex = objectBuffer[x + y * WIDTH];
@@ -57,6 +75,7 @@ public final class SceneRenderer {
                 ? objects.get(objectIndex).id : null;
     }
 
+    // Draws one object's mesh.
     private void renderObject(SceneObject object, int objectIndex, List<SceneObject> objects,
             Camera camera, Mat4x4 yaw, Mat4x4 pitch, boolean selected) {
         Vec3d[] worldVertices = MeshFactory.getBoxVertices();
@@ -103,6 +122,8 @@ public final class SceneRenderer {
         }
     }
 
+    // Applies a simple lighting model: ambient light plus directional or point light
+    // contributions, modulated by the surface normal and the light direction.
     private int applyLighting(int baseColor, Vec3d normal, Vec3d surface,
             List<SceneObject> objects, Camera camera) {
         double red = AMBIENT_LIGHT;
@@ -112,10 +133,13 @@ public final class SceneRenderer {
             if (!light.isLight()) continue;
             double diffuse;
             if (light.type == SceneObject.Type.DIRECTIONAL_LIGHT) {
+                // Sunlight is modeled as a single direction, not a point in space.
                 Vec3d towardLight = camera.transformLocalDirection(
                         new Vec3d(0.0, 0.0, -1.0), light.transform.rotation).normalize();
                 diffuse = Math.max(0.0, normal.dot(towardLight)) * light.intensity;
             } else {
+                // A point light spreads in all directions, so its brightness drops as
+                // the surface grows farther away from the light source.
                 Vec3d toLight = light.transform.position.sub(surface);
                 double distanceSquared = toLight.dot(toLight);
                 diffuse = distanceSquared == 0.0 ? 0.0
@@ -136,6 +160,7 @@ public final class SceneRenderer {
         return (int) Math.max(0, Math.min(255, Math.round(channel * intensity)));
     }
 
+    // Clips a polygon against a depth plane.
     private List<Vec3d> clipPolygon(List<Vec3d> polygon, double plane, boolean keepGreater) {
         List<Vec3d> clipped = new ArrayList<>();
         if (polygon.isEmpty()) return clipped;
@@ -157,6 +182,8 @@ public final class SceneRenderer {
         return clipped;
     }
 
+    // Converts a 3D point into screen coordinates. This is where the camera's view
+    // volume is mapped onto the visible 2D viewport.
     private Vec3d projectToScreen(Vec3d point) {
         Vec3d projected = projection.transformVec3d(point);
         projected.x = (projected.x + 1.0) * 0.5 * WIDTH;
@@ -164,6 +191,9 @@ public final class SceneRenderer {
         return projected;
     }
 
+    // For selected objects, we draw their edges after clipping them to the visible
+    // depth range so the outline does not render behind the camera or beyond the
+    // far plane.
     private Vec3d[] clipLineToDepth(Vec3d start, Vec3d end) {
         Vec3d[] clipped = clipLineAgainstPlane(start, end, NEAR_PLANE, true);
         return clipped == null ? null : clipLineAgainstPlane(clipped[0], clipped[1], FAR_PLANE, false);
@@ -185,6 +215,8 @@ public final class SceneRenderer {
         return new Vec3d[] {intersection, end};
     }
 
+    // Lines are clipped against the viewport bounds before drawing so that no edge
+    // is painted outside the visible area.
     private Vec3d[] clipLineToViewport(Vec3d start, Vec3d end) {
         double dx = end.x - start.x;
         double dy = end.y - start.y;
@@ -222,6 +254,9 @@ public final class SceneRenderer {
         }
     }
 
+    // Fills a triangle pixel by pixel using barycentric weights. This technique lets
+    // us know whether a point lies inside the triangle and what its interpolated z
+    // depth should be.
     private void fillTriangle(Vec3d p0, Vec3d p1, Vec3d p2, int color, int objectIndex) {
         int minX = (int) Math.max(0, Math.min(p0.x, Math.min(p1.x, p2.x)));
         int maxX = (int) Math.min(WIDTH - 1, Math.max(p0.x, Math.max(p1.x, p2.x)));
@@ -267,6 +302,8 @@ public final class SceneRenderer {
         }
     }
 
+    // Scales the internal render target to the panel size while leaving the image
+    // crisp and using pixel-nearest sampling.
     public void drawScaled(Graphics2D graphics, int x, int y, int width, int height) {
         graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                 RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);

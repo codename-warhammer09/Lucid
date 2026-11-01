@@ -33,6 +33,9 @@ import javax.swing.text.JTextComponent;
 
 @SuppressWarnings("serial")
 public final class SceneEditor extends JFrame {
+    // The editor keeps the scene, camera, and renderer in one place so the UI can
+    // update objects, manipulate the camera, and render the current world without
+    // complex event plumbing.
     private final Scene scene = new Scene();
     private final Camera camera = new Camera();
     private final SceneRenderer renderer = new SceneRenderer();
@@ -60,6 +63,8 @@ public final class SceneEditor extends JFrame {
         add(status, BorderLayout.SOUTH);
         bindEditorKeys();
 
+        // The editor runs a small animation loop to update the camera and repaint the
+        // viewport continuously while the user navigates the scene.
         Timer timer = new Timer(16, event -> {
             viewport.updateCamera();
             viewport.repaint();
@@ -67,6 +72,9 @@ public final class SceneEditor extends JFrame {
         timer.start();
     }
 
+    // The workspace is split into three regions: the list of scene objects, the main
+    // viewport, and the property editor. This gives the user a practical scene-
+    // editor layout without adding more complexity than necessary.
     private JSplitPane createWorkspace() {
         JPanel scenePanel = new JPanel(new BorderLayout());
         scenePanel.add(new JLabel("Scene objects"), BorderLayout.NORTH);
@@ -158,6 +166,9 @@ public final class SceneEditor extends JFrame {
         return item;
     }
 
+    // Creates a new object in front of the camera, with a position and scale suited
+    // to the current view. This makes it easy to add geometry without manually
+    // positioning every item from scratch.
     private void addObject(SceneObject.Type type) {
         String baseName;
         switch (type) {
@@ -209,6 +220,9 @@ public final class SceneEditor extends JFrame {
         refreshObjectList();
     }
 
+    // Rebuilds the list model from the current scene contents and synchronizes the
+    // property panel with the selected object. This keeps the editor UI and the
+    // underlying scene data in a consistent state.
     private void refreshObjectList() {
         int selectedIndex = -1;
         refreshingList = true;
@@ -252,6 +266,9 @@ public final class SceneEditor extends JFrame {
         properties.focusProperties();
     }
 
+    // Keyboard shortcuts are wired through the window's action map. This gives us a
+    // simple way to handle Delete, the P key, and Escape without cluttering the
+    // rest of the editor logic.
     private void bindEditorKeys() {
         getRootPane().getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW)
                 .put(KeyStroke.getKeyStroke("DELETE"), "delete-selected");
@@ -292,6 +309,8 @@ public final class SceneEditor extends JFrame {
         setStatus("Created an empty scene.");
     }
 
+    // File operations are kept deliberately simple: a scene is saved as a
+    // `.lucid` property file and reopened by reading the same format back in.
     private void openScene() {
         JFileChooser chooser = sceneChooser();
         if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;

@@ -8,12 +8,22 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Properties;
 
+/**
+ * Saves and loads scene files.
+ *
+ * The engine stores a scene as a simple property list rather than a more complex
+ * binary format. This keeps the file format easy to inspect and edit by hand while
+ * still being adequate for a small editor. Each object is flattened into a few
+ * named properties such as position, rotation, scale, color, and light intensity.
+ */
 public final class SceneIO {
     private static final String FORMAT_VERSION = "1";
     private static final int MAX_OBJECTS = 10000;
 
     private SceneIO() {}
 
+    // Saves a scene to disk using Java's Properties format. The data is written as
+    // key/value pairs so it remains simple and human-readable.
     public static void save(Scene scene, Path path) throws IOException {
         Properties properties = new Properties();
         properties.setProperty("lucid.scene.version", FORMAT_VERSION);
@@ -37,6 +47,8 @@ public final class SceneIO {
         }
     }
 
+    // Loads a scene from disk and reconstructs each object with its transform,
+    // color, and lighting information.
     public static Scene load(Path path) throws IOException {
         Properties properties = new Properties();
         try (InputStream input = Files.newInputStream(path)) {
@@ -76,6 +88,7 @@ public final class SceneIO {
         return scene;
     }
 
+    // Ensures a required value exists before trying to read and parse it.
     private static String required(Properties properties, String key) throws IOException {
         String value = properties.getProperty(key);
         if (value == null || value.trim().isEmpty()) {
@@ -84,6 +97,7 @@ public final class SceneIO {
         return value.trim();
     }
 
+    // Parses a comma-separated triple such as "1.0,2.0,3.0" into a Vec3d.
     private static Vec3d parseVector(String value, String key) throws IOException {
         String[] parts = value.split(",", -1);
         if (parts.length != 3) throw new IOException(key + " must contain three comma-separated values.");
@@ -91,6 +105,8 @@ public final class SceneIO {
                 parseDouble(parts[2], key));
     }
 
+    // Serializes a vector to a string. For rotations we convert radians to degrees
+    // before saving because that is easier to read and edit in a scene file.
     private static String vector(Vec3d value, boolean degrees) {
         double conversion = degrees ? 180.0 / Math.PI : 1.0;
         return Double.toString(value.x * conversion) + ","
