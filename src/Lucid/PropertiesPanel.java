@@ -13,8 +13,8 @@ import javax.swing.JTextField;
 
 @SuppressWarnings("serial")
 public final class PropertiesPanel extends JPanel {
-    // Each field represents one component of a vector: X, Y, and Z. This panel is
-    // the editor surface for placing, rotating, scaling, and coloring an object.
+    // The inspector edits an object's identity, transform, and appearance. Its
+    // camera-collision toggle is shown for geometry objects and hidden for lights.
     private final JTextField nameField = new JTextField();
     private final JTextField[] positionFields = fields();
     private final JTextField[] rotationFields = fields();
@@ -58,8 +58,8 @@ public final class PropertiesPanel extends JPanel {
         add(scroll, BorderLayout.CENTER);
     }
 
-    // Loads the chosen object into the form so the user can edit it without losing
-    // the existing transform or light values.
+    // Loads the chosen object into the form, including its collision setting, so
+    // edits start from the object's current transform, appearance, and light values.
     public void showObject(SceneObject object) {
         selected = object;
         boolean hasSelection = object != null;
@@ -102,6 +102,7 @@ public final class PropertiesPanel extends JPanel {
     }
 
     // Validates the edited values and writes them back to the selected object.
+    // The collision checkbox applies to geometry; light objects retain their value.
     private void applyChanges() {
         if (selected == null) return;
         try {

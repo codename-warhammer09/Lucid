@@ -54,6 +54,8 @@ public final class Camera {
         return rotate(direction, rotation);
     }
 
+    // Converts a world-space point to the object's unscaled local coordinates.
+    // This inverse transform lets collision and visibility tests use the shared box.
     public Vec3d transformWorldPointToLocal(SceneObject object, Vec3d point) {
         Vec3d unrotated = rotateInverse(point.sub(object.transform.position),
                 object.transform.rotation);
@@ -62,6 +64,7 @@ public final class Camera {
                 unrotated.z / object.transform.scale.z);
     }
 
+    // Applies the inverse rotation and scale to a direction without translation.
     public Vec3d transformWorldDirectionToLocal(SceneObject object, Vec3d direction) {
         Vec3d unrotated = rotateInverse(direction, object.transform.rotation);
         return new Vec3d(unrotated.x / object.transform.scale.x,
@@ -77,6 +80,7 @@ public final class Camera {
         return Mat4x4.makeRotationZ(rotation.z).transformVec3d(result);
     }
 
+    // Reverses the forward Z/Y/X application order with inverse rotations.
     private Vec3d rotateInverse(Vec3d point, Vec3d rotation) {
         Vec3d result = Mat4x4.makeRotationZ(-rotation.z).transformVec3d(point);
         result = Mat4x4.makeRotationY(-rotation.y).transformVec3d(result);

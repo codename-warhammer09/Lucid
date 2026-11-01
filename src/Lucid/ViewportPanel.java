@@ -14,7 +14,10 @@ import javax.swing.JPanel;
 
 @SuppressWarnings("serial")
 public final class ViewportPanel extends JPanel {
+    // Keep the camera slightly outside collider surfaces rather than letting its
+    // viewpoint reach the box boundary.
     private static final double CAMERA_RADIUS = 0.2;
+    // Prevent floating-point contact from being treated as an overlap.
     private static final double COLLISION_EPSILON = 1e-6;
 
     // The viewport is the user-facing window into the world. It stores a reference
@@ -87,8 +90,8 @@ public final class ViewportPanel extends JPanel {
         return selectedId;
     }
 
-    // Updates the camera based on held keys. This turns the viewport into a simple
-    // first-person camera controller without needing a separate physics engine.
+    // Updates the camera based on held keys. Translation is checked against enabled
+    // geometry colliders; turning and looking remain unrestricted.
     public void updateCamera() {
         long now = System.nanoTime();
         double delta = Math.min(0.05, (now - lastUpdate) / 1_000_000_000.0);
@@ -115,6 +118,8 @@ public final class ViewportPanel extends JPanel {
     }
 
     private void moveCamera(Vec3d movement) {
+        // Resolve each world axis independently so blocked motion on one axis does
+        // not prevent the camera from sliding along a collider on another.
         moveAlongAxis(0, movement.x);
         moveAlongAxis(1, movement.y);
         moveAlongAxis(2, movement.z);
@@ -129,6 +134,8 @@ public final class ViewportPanel extends JPanel {
         for (SceneObject object : scene.getObjects()) {
             if (object.isLight() || !object.collisionEnabled) continue;
 
+            // Expanding the local box by the camera radius is a swept sphere
+            // approximation that also accounts for each object's world scale.
             Vec3d start = camera.transformWorldPointToLocal(object, camera.position);
             Vec3d localMovement = camera.transformWorldDirectionToLocal(object, movement);
             Vec3d scale = object.transform.scale;
@@ -151,6 +158,8 @@ public final class ViewportPanel extends JPanel {
 
     private Double segmentBoxEntry(Vec3d start, Vec3d movement,
             double minX, double maxX, double minY, double maxY, double minZ, double maxZ) {
+        // Slab intersection returns the first movement fraction entering the box,
+        // or null when the movement segment does not cross it.
         double[] starts = {start.x, start.y, start.z};
         double[] deltas = {movement.x, movement.y, movement.z};
         double[] mins = {minX, minY, minZ};

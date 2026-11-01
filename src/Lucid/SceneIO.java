@@ -14,7 +14,9 @@ import java.util.Properties;
  * The engine stores a scene as a simple property list rather than a more complex
  * binary format. This keeps the file format easy to inspect and edit by hand while
  * still being adequate for a small editor. Each object is flattened into a few
- * named properties such as position, rotation, scale, color, and light intensity.
+ * named properties such as position, rotation, scale, color, light intensity, and
+ * whether a geometry object blocks camera movement. Missing collision properties
+ * in earlier version-1 files are treated as disabled.
  */
 public final class SceneIO {
     private static final String FORMAT_VERSION = "1";
@@ -23,7 +25,8 @@ public final class SceneIO {
     private SceneIO() {}
 
     // Saves a scene to disk using Java's Properties format. The data is written as
-    // key/value pairs so it remains simple and human-readable.
+    // key/value pairs so it remains simple and human-readable, including each
+    // object's camera-collision setting.
     public static void save(Scene scene, Path path) throws IOException {
         Properties properties = new Properties();
         properties.setProperty("lucid.scene.version", FORMAT_VERSION);
@@ -49,8 +52,9 @@ public final class SceneIO {
         }
     }
 
-    // Loads a scene from disk and reconstructs each object with its transform,
-    // color, and lighting information.
+    // Loads a scene from disk and reconstructs each object's transform, color,
+    // lighting information, and collision setting. Older files without that
+    // optional setting keep the default of collision disabled.
     public static Scene load(Path path) throws IOException {
         Properties properties = new Properties();
         try (InputStream input = Files.newInputStream(path)) {

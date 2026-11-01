@@ -14,7 +14,9 @@ import java.util.List;
  *
  * This is the heart of the engine. It takes 3D mesh data, positions the camera,
  * applies transforms, checks which triangles are visible, shades them based on
- * lights, and writes the final pixel colors into a buffered image.
+ * lights, and writes the final pixel colors into a buffered image. Opaque meshes
+ * also occlude point- and directional-light contributions before surfaces are
+ * shaded.
  */
 public final class SceneRenderer {
     public static final int WIDTH = 320;
@@ -123,8 +125,8 @@ public final class SceneRenderer {
         }
     }
 
-    // Applies a simple lighting model: ambient light plus directional or point light
-    // contributions, modulated by the surface normal and the light direction.
+    // Applies ambient and diffuse lighting. Each positive diffuse contribution is
+    // omitted when another opaque mesh lies between the surface and its light.
     private int applyLighting(int baseColor, Vec3d normal, Vec3d surface,
             SceneObject receiver, List<SceneObject> objects, Camera camera) {
         double red = AMBIENT_LIGHT;
@@ -166,6 +168,8 @@ public final class SceneRenderer {
 
     private boolean isOccluded(Vec3d surface, Vec3d towardLight, double lightDistance,
             SceneObject receiver, SceneObject light, List<SceneObject> objects, Camera camera) {
+        // Offset the ray from its surface to avoid self-intersection. Point-light
+        // rays stop at the light; directional-light rays extend to infinity.
         Vec3d origin = surface.add(towardLight.mul(SHADOW_EPSILON));
         double maxDistance = Double.isInfinite(lightDistance)
                 ? lightDistance : lightDistance - 2.0 * SHADOW_EPSILON;
@@ -180,6 +184,8 @@ public final class SceneRenderer {
 
     private boolean rayIntersectsBox(Vec3d origin, Vec3d direction,
             SceneObject object, double maxDistance, Camera camera) {
+        // Transform the ray into box-local space and intersect its [-0.5, 0.5]
+        // bounds, preserving the object's rotation and non-uniform scale.
         Vec3d localOrigin = camera.transformWorldPointToLocal(object, origin);
         Vec3d localDirection = camera.transformWorldDirectionToLocal(object, direction);
         double[] starts = {localOrigin.x, localOrigin.y, localOrigin.z};

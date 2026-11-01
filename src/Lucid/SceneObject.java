@@ -26,8 +26,10 @@ public final class SceneObject {
     public int color;
     public int lightColor;
     public double intensity;
+    // Geometry can opt into stopping camera movement; new objects default to off.
     public boolean collisionEnabled;
 
+    // Retains the original constructor behavior for callers that do not specify collision.
     public SceneObject(String id, String name, Type type, Transform transform,
             int color, int lightColor, double intensity) {
         this(id, name, type, transform, color, lightColor, intensity, false);
