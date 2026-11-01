@@ -12,11 +12,12 @@ The editor currently includes:
 - An initially empty scene with cube, thick-wall, directional-light, and
   point-light templates.
 - A software-rendered viewport with perspective projection, near/far clipping,
-  depth buffering, ambient and directional/point lighting.
+  depth buffering, ambient and directional/point lighting with opaque-mesh
+  shadow occlusion.
 - A scene object list, viewport selection, and a visible outline for the
   selected object.
-- An inspector for object name, position, rotation, scale, and color. Light
-  objects also expose light color and intensity.
+- An inspector for object name, position, rotation, scale, color, and optional
+  camera collision. Light objects also expose light color and intensity.
 - Scene creation, opening, and saving in a versioned `.lucid` text format.
 
 The implementation and controls below describe what exists now and will evolve
@@ -51,7 +52,8 @@ The `Lucid.Lucid` entry point opens the integrated scene editor.
    selection is outlined and its values appear in the Properties panel.
 3. Edit the values and choose **Apply**. Positions and scales use world units;
    rotations are entered in degrees. Object colors accept six hexadecimal RGB
-   digits, with or without a leading `#`.
+   digits, with or without a leading `#`. Enable **Camera collision enabled**
+   on a cube or wall to stop the camera at its surface; it is off by default.
 4. Choose **File → Save**, **Save as...**, or **Open...** to persist and restore
    scenes. Opening a scene validates the file before replacing the current
    scene. Invalid files are reported without discarding the current scene.
@@ -81,10 +83,12 @@ while editing a text field.
 
 ## Scene file format
 
-`.lucid` files are versioned Java Properties text files. Object entries store
-their ID, name, template type, transform, raster color, and light settings.
-Rotation values in the file are in degrees. The format is designed to be
-readable and does not require external serialization libraries.
+``.lucid` files are versioned Java Properties text files. Object entries store
+their ID, name, template type, transform, raster color, light settings, and
+camera-collision setting. Rotation values in the file are in degrees. Files
+without the collision property remain valid and default to collision off. The
+format is designed to be readable and does not require external serialization
+libraries.
 
 ## Project layout
 

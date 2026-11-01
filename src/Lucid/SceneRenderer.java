@@ -22,6 +22,7 @@ public final class SceneRenderer {
     private static final double NEAR_PLANE = 0.1;
     private static final double FAR_PLANE = 100.0;
     private static final double AMBIENT_LIGHT = 0.22;
+    private static final double SHADOW_EPSILON = 0.001;
 
     // The frame buffer is the image that will ultimately be displayed in the UI.
     private final BufferedImage frameBuffer =
@@ -103,7 +104,7 @@ public final class SceneRenderer {
             clipped = clipPolygon(clipped, FAR_PLANE, false);
             int color = object.isLight()
                     ? object.color
-                    : applyLighting(object.color, normal, world0, objects, camera);
+                    : applyLighting(object.color, normal, world0, object, objects, camera);
             for (int i = 1; i < clipped.size() - 1; i++) {
                 fillTriangle(projectToScreen(clipped.get(0)),
                         projectToScreen(clipped.get(i)),
@@ -125,27 +126,34 @@ public final class SceneRenderer {
     // Applies a simple lighting model: ambient light plus directional or point light
     // contributions, modulated by the surface normal and the light direction.
     private int applyLighting(int baseColor, Vec3d normal, Vec3d surface,
-            List<SceneObject> objects, Camera camera) {
+            SceneObject receiver, List<SceneObject> objects, Camera camera) {
         double red = AMBIENT_LIGHT;
         double green = AMBIENT_LIGHT;
         double blue = AMBIENT_LIGHT;
         for (SceneObject light : objects) {
             if (!light.isLight()) continue;
             double diffuse;
+            Vec3d towardLight;
+            double lightDistance;
             if (light.type == SceneObject.Type.DIRECTIONAL_LIGHT) {
                 // Sunlight is modeled as a single direction, not a point in space.
-                Vec3d towardLight = camera.transformLocalDirection(
+                towardLight = camera.transformLocalDirection(
                         new Vec3d(0.0, 0.0, -1.0), light.transform.rotation).normalize();
                 diffuse = Math.max(0.0, normal.dot(towardLight)) * light.intensity;
+                lightDistance = Double.POSITIVE_INFINITY;
             } else {
                 // A point light spreads in all directions, so its brightness drops as
                 // the surface grows farther away from the light source.
                 Vec3d toLight = light.transform.position.sub(surface);
                 double distanceSquared = toLight.dot(toLight);
+                lightDistance = Math.sqrt(distanceSquared);
+                towardLight = toLight.normalize();
                 diffuse = distanceSquared == 0.0 ? 0.0
-                        : Math.max(0.0, normal.dot(toLight.normalize())) * light.intensity
+                        : Math.max(0.0, normal.dot(towardLight)) * light.intensity
                                 / (1.0 + 0.12 * distanceSquared);
             }
+            if (diffuse > 0.0 && isOccluded(surface, towardLight, lightDistance,
+                    receiver, light, objects, camera)) continue;
             red += diffuse * ((light.lightColor >> 16) & 0xFF) / 255.0;
             green += diffuse * ((light.lightColor >> 8) & 0xFF) / 255.0;
             blue += diffuse * (light.lightColor & 0xFF) / 255.0;
@@ -154,6 +162,42 @@ public final class SceneRenderer {
         int g = shadeChannel((baseColor >> 8) & 0xFF, green);
         int b = shadeChannel(baseColor & 0xFF, blue);
         return (r << 16) | (g << 8) | b;
+    }
+
+    private boolean isOccluded(Vec3d surface, Vec3d towardLight, double lightDistance,
+            SceneObject receiver, SceneObject light, List<SceneObject> objects, Camera camera) {
+        Vec3d origin = surface.add(towardLight.mul(SHADOW_EPSILON));
+        double maxDistance = Double.isInfinite(lightDistance)
+                ? lightDistance : lightDistance - 2.0 * SHADOW_EPSILON;
+        if (maxDistance <= 0.0) return false;
+
+        for (SceneObject object : objects) {
+            if (object == receiver || object == light) continue;
+            if (rayIntersectsBox(origin, towardLight, object, maxDistance, camera)) return true;
+        }
+        return false;
+    }
+
+    private boolean rayIntersectsBox(Vec3d origin, Vec3d direction,
+            SceneObject object, double maxDistance, Camera camera) {
+        Vec3d localOrigin = camera.transformWorldPointToLocal(object, origin);
+        Vec3d localDirection = camera.transformWorldDirectionToLocal(object, direction);
+        double[] starts = {localOrigin.x, localOrigin.y, localOrigin.z};
+        double[] deltas = {localDirection.x, localDirection.y, localDirection.z};
+        double entry = 0.0;
+        double exit = maxDistance;
+        for (int axis = 0; axis < 3; axis++) {
+            if (deltas[axis] == 0.0) {
+                if (starts[axis] < -0.5 || starts[axis] > 0.5) return false;
+                continue;
+            }
+            double first = (-0.5 - starts[axis]) / deltas[axis];
+            double second = (0.5 - starts[axis]) / deltas[axis];
+            entry = Math.max(entry, Math.min(first, second));
+            exit = Math.min(exit, Math.max(first, second));
+            if (entry > exit) return false;
+        }
+        return exit > SHADOW_EPSILON && entry < maxDistance;
     }
 
     private int shadeChannel(int channel, double intensity) {

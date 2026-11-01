@@ -14,6 +14,9 @@ import javax.swing.JPanel;
 
 @SuppressWarnings("serial")
 public final class ViewportPanel extends JPanel {
+    private static final double CAMERA_RADIUS = 0.2;
+    private static final double COLLISION_EPSILON = 1e-6;
+
     // The viewport is the user-facing window into the world. It stores a reference
     // to the scene and camera so frames can be refreshed and interaction can update
     // either without extra plumbing.
@@ -103,13 +106,78 @@ public final class ViewportPanel extends JPanel {
                 - (keyLeft ? rightVector.z : 0.0) + (keyRight ? rightVector.z : 0.0);
         double length = Math.sqrt(moveX * moveX + moveZ * moveZ);
         if (length > 0.0) {
-            camera.position.x += moveX / length * speed;
-            camera.position.z += moveZ / length * speed;
+            moveCamera(new Vec3d(moveX / length * speed, 0.0, moveZ / length * speed));
         }
-        if (rise) camera.position.y += speed;
-        if (fall) camera.position.y -= speed;
+        if (rise) moveCamera(new Vec3d(0.0, speed, 0.0));
+        if (fall) moveCamera(new Vec3d(0.0, -speed, 0.0));
         if (lookUp) camera.pitch = Math.max(-Math.PI / 2.0 + 0.01, camera.pitch - turn);
         if (lookDown) camera.pitch = Math.min(Math.PI / 2.0 - 0.01, camera.pitch + turn);
+    }
+
+    private void moveCamera(Vec3d movement) {
+        moveAlongAxis(0, movement.x);
+        moveAlongAxis(1, movement.y);
+        moveAlongAxis(2, movement.z);
+    }
+
+    private void moveAlongAxis(int axis, double distance) {
+        if (distance == 0.0) return;
+        Vec3d movement = axis == 0 ? new Vec3d(distance, 0.0, 0.0)
+                : axis == 1 ? new Vec3d(0.0, distance, 0.0)
+                : new Vec3d(0.0, 0.0, distance);
+        double allowedFraction = 1.0;
+        for (SceneObject object : scene.getObjects()) {
+            if (object.isLight() || !object.collisionEnabled) continue;
+
+            Vec3d start = camera.transformWorldPointToLocal(object, camera.position);
+            Vec3d localMovement = camera.transformWorldDirectionToLocal(object, movement);
+            Vec3d scale = object.transform.scale;
+            double radiusX = CAMERA_RADIUS / scale.x;
+            double radiusY = CAMERA_RADIUS / scale.y;
+            double radiusZ = CAMERA_RADIUS / scale.z;
+            Double collision = segmentBoxEntry(start, localMovement,
+                    -0.5 - radiusX, 0.5 + radiusX,
+                    -0.5 - radiusY, 0.5 + radiusY,
+                    -0.5 - radiusZ, 0.5 + radiusZ);
+            if (collision != null) {
+                allowedFraction = Math.min(allowedFraction,
+                        Math.max(0.0, collision - COLLISION_EPSILON / Math.abs(distance)));
+            }
+        }
+        if (axis == 0) camera.position.x += distance * allowedFraction;
+        else if (axis == 1) camera.position.y += distance * allowedFraction;
+        else camera.position.z += distance * allowedFraction;
+    }
+
+    private Double segmentBoxEntry(Vec3d start, Vec3d movement,
+            double minX, double maxX, double minY, double maxY, double minZ, double maxZ) {
+        double[] starts = {start.x, start.y, start.z};
+        double[] deltas = {movement.x, movement.y, movement.z};
+        double[] mins = {minX, minY, minZ};
+        double[] maxs = {maxX, maxY, maxZ};
+        boolean startsInside = true;
+        boolean endsInside = true;
+        for (int axis = 0; axis < 3; axis++) {
+            startsInside &= starts[axis] >= mins[axis] && starts[axis] <= maxs[axis];
+            double end = starts[axis] + deltas[axis];
+            endsInside &= end >= mins[axis] && end <= maxs[axis];
+        }
+        if (startsInside) return endsInside ? 0.0 : null;
+
+        double entry = 0.0;
+        double exit = 1.0;
+        for (int axis = 0; axis < 3; axis++) {
+            if (deltas[axis] == 0.0) {
+                if (starts[axis] < mins[axis] || starts[axis] > maxs[axis]) return null;
+                continue;
+            }
+            double first = (mins[axis] - starts[axis]) / deltas[axis];
+            double second = (maxs[axis] - starts[axis]) / deltas[axis];
+            entry = Math.max(entry, Math.min(first, second));
+            exit = Math.min(exit, Math.max(first, second));
+            if (entry > exit) return null;
+        }
+        return entry <= 1.0 ? entry : null;
     }
 
     @Override

@@ -5,6 +5,7 @@ import java.awt.GridLayout;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -21,6 +22,7 @@ public final class PropertiesPanel extends JPanel {
     private final JTextField colorField = new JTextField();
     private final JTextField lightColorField = new JTextField();
     private final JTextField intensityField = new JTextField();
+    private final JCheckBox collisionEnabled = new JCheckBox("Camera collision");
     private final JLabel selectionLabel = new JLabel("Select an object to edit its properties.");
     private final JLabel colorLabel = new JLabel("Color (RGB hex)");
     private final Consumer<String> showStatus;
@@ -36,6 +38,7 @@ public final class PropertiesPanel extends JPanel {
 
         JPanel form = new JPanel(new GridLayout(0, 1, 4, 4));
         form.add(selectionLabel);
+        form.add(collisionEnabled);
         form.add(new JLabel("Name"));
         form.add(nameField);
         addVector(form, "Position", positionFields);
@@ -62,6 +65,7 @@ public final class PropertiesPanel extends JPanel {
         boolean hasSelection = object != null;
         selectionLabel.setText(hasSelection
                 ? object.type.name().replace('_', ' ') : "Select an object to edit its properties.");
+        collisionEnabled.setVisible(hasSelection && !object.isLight());
         nameField.setEnabled(hasSelection);
         setFieldsEnabled(positionFields, hasSelection);
         setFieldsEnabled(rotationFields, hasSelection);
@@ -69,11 +73,13 @@ public final class PropertiesPanel extends JPanel {
         colorField.setEnabled(hasSelection);
         lightColorField.setEnabled(hasSelection && object.isLight());
         intensityField.setEnabled(hasSelection && object.isLight());
+        collisionEnabled.setEnabled(hasSelection && !object.isLight());
         if (!hasSelection) {
             nameField.setText("");
             colorField.setText("");
             lightColorField.setText("");
             intensityField.setText("");
+            collisionEnabled.setSelected(false);
             clearFields(positionFields);
             clearFields(rotationFields);
             clearFields(scaleFields);
@@ -88,6 +94,7 @@ public final class PropertiesPanel extends JPanel {
         colorField.setText(String.format("#%06X", object.color));
         lightColorField.setText(String.format("#%06X", object.lightColor));
         intensityField.setText(Double.toString(object.intensity));
+        collisionEnabled.setSelected(object.collisionEnabled);
     }
 
     public void focusProperties() {
@@ -108,13 +115,17 @@ public final class PropertiesPanel extends JPanel {
                     ? parseColor(lightColorField.getText(), "Light color") : selected.lightColor;
             double intensity = selected.isLight()
                     ? Double.parseDouble(intensityField.getText().trim()) : selected.intensity;
+            boolean objectCollisionEnabled = selected.isLight()
+                    ? selected.collisionEnabled : collisionEnabled.isSelected();
             SceneObject validated = new SceneObject(selected.id, name, selected.type,
-                    new Transform(position, rotation, scale), color, lightColor, intensity);
+                    new Transform(position, rotation, scale), color, lightColor, intensity,
+                    objectCollisionEnabled);
             selected.name = validated.name;
             selected.transform = validated.transform;
             selected.color = validated.color;
             selected.lightColor = validated.lightColor;
             selected.intensity = validated.intensity;
+            selected.collisionEnabled = validated.collisionEnabled;
             showStatus.accept("Updated " + selected.name + ".");
             afterApply.run();
         } catch (IllegalArgumentException ex) {

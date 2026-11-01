@@ -41,6 +41,8 @@ public final class SceneIO {
             properties.setProperty(prefix + "color", hex(object.color));
             properties.setProperty(prefix + "lightColor", hex(object.lightColor));
             properties.setProperty(prefix + "intensity", Double.toString(object.intensity));
+            properties.setProperty(prefix + "collisionEnabled",
+                    Boolean.toString(object.collisionEnabled));
         }
         try (OutputStream output = Files.newOutputStream(path)) {
             properties.store(output, "Lucid scene; rotation values are in degrees");
@@ -76,9 +78,13 @@ public final class SceneIO {
                         prefix + "lightColor");
                 double intensity = parseDouble(required(properties, prefix + "intensity"),
                         prefix + "intensity");
+                boolean collisionEnabled = parseBoolean(
+                        properties.getProperty(prefix + "collisionEnabled", "false"),
+                        prefix + "collisionEnabled");
                 SceneObject object = new SceneObject(required(properties, prefix + "id"),
                         required(properties, prefix + "name"), type,
-                        new Transform(position, rotation, scale), color, lightColor, intensity);
+                        new Transform(position, rotation, scale), color, lightColor, intensity,
+                        collisionEnabled);
                 scene.add(object);
             } catch (IllegalArgumentException ex) {
                 throw new IOException("Invalid scene data for object " + i + ": "
@@ -142,5 +148,11 @@ public final class SceneIO {
         } catch (NumberFormatException ex) {
             throw new IOException(key + " must be a finite number.", ex);
         }
+    }
+
+    private static boolean parseBoolean(String value, String key) throws IOException {
+        if ("true".equalsIgnoreCase(value.trim())) return true;
+        if ("false".equalsIgnoreCase(value.trim())) return false;
+        throw new IOException(key + " must be true or false.");
     }
 }

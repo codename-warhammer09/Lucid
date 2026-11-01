@@ -54,11 +54,32 @@ public final class Camera {
         return rotate(direction, rotation);
     }
 
+    public Vec3d transformWorldPointToLocal(SceneObject object, Vec3d point) {
+        Vec3d unrotated = rotateInverse(point.sub(object.transform.position),
+                object.transform.rotation);
+        return new Vec3d(unrotated.x / object.transform.scale.x,
+                unrotated.y / object.transform.scale.y,
+                unrotated.z / object.transform.scale.z);
+    }
+
+    public Vec3d transformWorldDirectionToLocal(SceneObject object, Vec3d direction) {
+        Vec3d unrotated = rotateInverse(direction, object.transform.rotation);
+        return new Vec3d(unrotated.x / object.transform.scale.x,
+                unrotated.y / object.transform.scale.y,
+                unrotated.z / object.transform.scale.z);
+    }
+
     // Rotation is applied in X, then Y, then Z order. This is a common pattern in
     // 3D graphics: each rotation updates the local axes relative to the previous one.
     private Vec3d rotate(Vec3d point, Vec3d rotation) {
         Vec3d result = Mat4x4.makeRotationX(rotation.x).transformVec3d(point);
         result = Mat4x4.makeRotationY(rotation.y).transformVec3d(result);
         return Mat4x4.makeRotationZ(rotation.z).transformVec3d(result);
+    }
+
+    private Vec3d rotateInverse(Vec3d point, Vec3d rotation) {
+        Vec3d result = Mat4x4.makeRotationZ(-rotation.z).transformVec3d(point);
+        result = Mat4x4.makeRotationY(-rotation.y).transformVec3d(result);
+        return Mat4x4.makeRotationX(-rotation.x).transformVec3d(result);
     }
 }

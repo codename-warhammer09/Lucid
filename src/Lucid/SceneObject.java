@@ -26,9 +26,15 @@ public final class SceneObject {
     public int color;
     public int lightColor;
     public double intensity;
+    public boolean collisionEnabled;
 
     public SceneObject(String id, String name, Type type, Transform transform,
             int color, int lightColor, double intensity) {
+        this(id, name, type, transform, color, lightColor, intensity, false);
+    }
+
+    public SceneObject(String id, String name, Type type, Transform transform,
+            int color, int lightColor, double intensity, boolean collisionEnabled) {
         if (id == null || id.trim().isEmpty()) {
             throw new IllegalArgumentException("Object ID cannot be empty.");
         }
@@ -52,6 +58,7 @@ public final class SceneObject {
         this.color = color;
         this.lightColor = lightColor;
         this.intensity = intensity;
+        this.collisionEnabled = collisionEnabled;
     }
 
     // Factory method for creating an object with a generated ID and sensible default
