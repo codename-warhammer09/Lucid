@@ -8,10 +8,16 @@ import java.awt.event.WindowEvent;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.prefs.BackingStoreException;
+import java.util.prefs.Preferences;
 import javax.swing.AbstractAction;
+import javax.swing.ButtonGroup;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JCheckBoxMenuItem;
+import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -21,9 +27,12 @@ import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JScrollPane;
+import javax.swing.JSlider;
 import javax.swing.JSplitPane;
 import javax.swing.JToolBar;
+import javax.swing.JToggleButton;
 import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
@@ -39,6 +48,16 @@ public final class SceneEditor extends JFrame {
     private final Scene scene = new Scene();
     private final Camera camera = new Camera();
     private final SceneRenderer renderer = new SceneRenderer();
+    private final Preferences editorPreferences = Preferences.userNodeForPackage(SceneEditor.class);
+    private final JCheckBox clickToCameraCheck = new JCheckBox("Click to Camera", true);
+    private final JCheckBoxMenuItem clickToCameraMenuItem =
+            new JCheckBoxMenuItem("Click viewport to enter Camera mode", true);
+    private final JToggleButton selectModeButton = new JToggleButton("Select");
+    private final JToggleButton cameraModeButton = new JToggleButton("Camera");
+    private final JRadioButtonMenuItem selectModeMenuItem =
+            new JRadioButtonMenuItem("Select mode", true);
+    private final JRadioButtonMenuItem cameraModeMenuItem =
+            new JRadioButtonMenuItem("Camera mode");
     private final DefaultListModel<SceneObject> objectListModel = new DefaultListModel<>();
     private final JList<SceneObject> objectList = new JList<>(objectListModel);
     private final JLabel status = new JLabel("Ready — add an object to begin.");
@@ -47,16 +66,29 @@ public final class SceneEditor extends JFrame {
     private String selectedId;
     private Path currentFile;
     private boolean refreshingList;
+    private RenderSettings renderSettings;
 
     public SceneEditor() {
         super("Lucid — 3D Engine");
+        renderSettings = RenderSettings.load(editorPreferences);
+        renderer.configure(renderSettings);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setMinimumSize(new Dimension(1000, 650));
         setSize(1280, 800);
         setLocationRelativeTo(null);
 
         properties = new PropertiesPanel(this::setStatus, this::refreshObjectList);
-        viewport = new ViewportPanel(scene, camera, renderer, this::selectionChanged);
+        viewport = new ViewportPanel(scene, camera, renderer, this::selectionChanged,
+                this::refreshObjectList, this::inputModeChanged, this::setStatus);
+        viewport.setClickToCamera(clickToCameraCheck.isSelected());
+        clickToCameraCheck.addActionListener(event ->
+                setClickToCamera(clickToCameraCheck.isSelected()));
+        clickToCameraMenuItem.addActionListener(event ->
+                setClickToCamera(clickToCameraMenuItem.isSelected()));
+        selectModeButton.addActionListener(event -> activateInputMode(ViewportPanel.InputMode.SELECT));
+        cameraModeButton.addActionListener(event -> activateInputMode(ViewportPanel.InputMode.CAMERA));
+        selectModeMenuItem.addActionListener(event -> activateInputMode(ViewportPanel.InputMode.SELECT));
+        cameraModeMenuItem.addActionListener(event -> activateInputMode(ViewportPanel.InputMode.CAMERA));
         setJMenuBar(createMenuBar());
         add(createToolbar(), BorderLayout.NORTH);
         add(createWorkspace(), BorderLayout.CENTER);
@@ -126,6 +158,14 @@ public final class SceneEditor extends JFrame {
         addButton(toolbar, "Directional light", SceneObject.Type.DIRECTIONAL_LIGHT);
         addButton(toolbar, "Point light", SceneObject.Type.POINT_LIGHT);
         toolbar.addSeparator();
+        ButtonGroup inputModes = new ButtonGroup();
+        inputModes.add(selectModeButton);
+        inputModes.add(cameraModeButton);
+        selectModeButton.setSelected(true);
+        toolbar.add(selectModeButton);
+        toolbar.add(cameraModeButton);
+        toolbar.add(clickToCameraCheck);
+        toolbar.addSeparator();
         toolbar.add(button("Delete", this::deleteSelected));
         toolbar.add(button("Properties (P)", this::focusProperties));
         return toolbar;
@@ -147,6 +187,17 @@ public final class SceneEditor extends JFrame {
                 addObject(SceneObject.Type.DIRECTIONAL_LIGHT)));
         create.add(menuItem("Point light", event -> addObject(SceneObject.Type.POINT_LIGHT)));
         bar.add(create);
+
+        JMenu view = new JMenu("View");
+        ButtonGroup inputModes = new ButtonGroup();
+        inputModes.add(selectModeMenuItem);
+        inputModes.add(cameraModeMenuItem);
+        view.add(selectModeMenuItem);
+        view.add(cameraModeMenuItem);
+        view.addSeparator();
+        view.add(clickToCameraMenuItem);
+        view.add(menuItem("Render settings...", event -> showRenderSettings()));
+        bar.add(view);
         return bar;
     }
 
@@ -218,6 +269,97 @@ public final class SceneEditor extends JFrame {
     private void selectionChanged() {
         selectedId = viewport.getSelectedId();
         refreshObjectList();
+    }
+
+    private void activateInputMode(ViewportPanel.InputMode mode) {
+        viewport.setInputMode(mode);
+        viewport.requestFocusInWindow();
+    }
+
+    private void inputModeChanged(ViewportPanel.InputMode mode) {
+        boolean selecting = mode == ViewportPanel.InputMode.SELECT;
+        selectModeButton.setSelected(selecting);
+        selectModeMenuItem.setSelected(selecting);
+        cameraModeButton.setSelected(!selecting);
+        cameraModeMenuItem.setSelected(!selecting);
+        setStatus(selecting ? "Select mode: click objects to select and edit transforms."
+                : "Camera mode: use W/A/S/D, arrows, E/Q, and Shift to navigate.");
+    }
+
+    private void setClickToCamera(boolean enabled) {
+        clickToCameraCheck.setSelected(enabled);
+        clickToCameraMenuItem.setSelected(enabled);
+        viewport.setClickToCamera(enabled);
+        setStatus(enabled ? "Viewport clicks enter Camera mode."
+                : "Viewport clicks select objects.");
+    }
+
+    private void showRenderSettings() {
+        JSlider ambient = new JSlider(0, 100,
+                (int) Math.round(renderSettings.ambientLight * 100.0));
+        ambient.setMajorTickSpacing(25);
+        ambient.setPaintTicks(true);
+        ambient.setPaintLabels(true);
+        JSlider fieldOfView = new JSlider(45, 120,
+                (int) Math.round(renderSettings.fieldOfView));
+        fieldOfView.setMajorTickSpacing(15);
+        fieldOfView.setPaintTicks(true);
+        fieldOfView.setPaintLabels(true);
+        JSlider falloff = new JSlider(0, 50,
+                (int) Math.round(renderSettings.pointLightFalloff * 100.0));
+        falloff.setMajorTickSpacing(10);
+        falloff.setPaintTicks(true);
+        falloff.setPaintLabels(true);
+        JCheckBox shadows = new JCheckBox("Enable opaque-mesh shadows",
+                renderSettings.shadowsEnabled);
+        JComboBox<String> resolution = new JComboBox<>(new String[] {
+            "320 x 240 (Fast)",
+            "640 x 480",
+            "960 x 720 (High detail)"
+        });
+        resolution.setSelectedIndex(renderSettings.getResolutionIndex());
+
+        JPanel form = new JPanel(new java.awt.GridLayout(0, 2, 8, 8));
+        form.add(new JLabel("Ambient light (%)"));
+        form.add(ambient);
+        form.add(new JLabel("Field of view (degrees)"));
+        form.add(fieldOfView);
+        form.add(new JLabel("Point-light falloff (0-0.50)"));
+        form.add(falloff);
+        form.add(new JLabel("Internal render resolution"));
+        form.add(resolution);
+        form.add(new JLabel("Shadows"));
+        form.add(shadows);
+
+        int choice = JOptionPane.showConfirmDialog(this, form, "Render Settings",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (choice != JOptionPane.OK_OPTION) return;
+
+        int resolutionIndex = resolution.getSelectedIndex();
+        try {
+            RenderSettings updated = new RenderSettings(
+                    ambient.getValue() / 100.0, shadows.isSelected(),
+                    fieldOfView.getValue(), falloff.getValue() / 100.0,
+                    RenderSettings.getResolutionWidth(resolutionIndex),
+                    RenderSettings.getResolutionHeight(resolutionIndex));
+            updated.save(editorPreferences);
+            renderSettings = updated;
+            renderer.configure(renderSettings);
+            viewport.repaint();
+            setStatus("Updated and saved render settings.");
+        } catch (IllegalArgumentException ex) {
+            showRenderSettingsError("Render settings not applied: " + ex.getMessage());
+        } catch (BackingStoreException ex) {
+            showRenderSettingsError("Could not save render settings: " + ex.getMessage());
+        } catch (SecurityException | IllegalStateException ex) {
+            showRenderSettingsError("Could not persist render settings: " + ex.getMessage());
+        }
+    }
+
+    private void showRenderSettingsError(String message) {
+        setStatus(message);
+        JOptionPane.showMessageDialog(this, message, "Render settings error",
+                JOptionPane.ERROR_MESSAGE);
     }
 
     // Rebuilds the list model from the current scene contents and synchronizes the

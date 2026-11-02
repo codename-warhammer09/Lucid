@@ -10,10 +10,16 @@ import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.function.Consumer;
 import javax.swing.JPanel;
 
 @SuppressWarnings("serial")
 public final class ViewportPanel extends JPanel {
+    public enum InputMode {
+        SELECT,
+        CAMERA
+    }
+
     // Keep the camera slightly outside collider surfaces rather than letting its
     // viewpoint reach the box boundary.
     private static final double CAMERA_RADIUS = 0.2;
@@ -27,7 +33,12 @@ public final class ViewportPanel extends JPanel {
     private final Camera camera;
     private final SceneRenderer renderer;
     private final Runnable selectionChanged;
+    private final Runnable objectChanged;
+    private final Consumer<InputMode> inputModeChanged;
+    private final Consumer<String> showStatus;
     private String selectedId;
+    private InputMode inputMode = InputMode.SELECT;
+    private boolean clickToCamera = true;
     private boolean keyForward;
     private boolean keyBackward;
     private boolean keyLeft;
@@ -42,11 +53,15 @@ public final class ViewportPanel extends JPanel {
     private long lastUpdate = System.nanoTime();
 
     public ViewportPanel(Scene scene, Camera camera, SceneRenderer renderer,
-            Runnable selectionChanged) {
+            Runnable selectionChanged, Runnable objectChanged,
+            Consumer<InputMode> inputModeChanged, Consumer<String> showStatus) {
         this.scene = scene;
         this.camera = camera;
         this.renderer = renderer;
         this.selectionChanged = selectionChanged;
+        this.objectChanged = objectChanged;
+        this.inputModeChanged = inputModeChanged;
+        this.showStatus = showStatus;
         setBackground(new Color(0x111522));
         setFocusable(true);
         setPreferredSize(new Dimension(640, 480));
@@ -54,23 +69,28 @@ public final class ViewportPanel extends JPanel {
             @Override
             public void mousePressed(MouseEvent event) {
                 requestFocusInWindow();
-                selectAt(event.getX(), event.getY());
+                if (inputMode == InputMode.SELECT) {
+                    if (clickToCamera) setInputMode(InputMode.CAMERA);
+                    else selectAt(event.getX(), event.getY());
+                }
             }
         });
         addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent event) {
-                if (event.getKeyCode() == KeyEvent.VK_R) {
+                if (inputMode == InputMode.CAMERA && event.getKeyCode() == KeyEvent.VK_R) {
                     camera.reset();
                     repaint();
-                } else {
+                } else if (inputMode == InputMode.CAMERA) {
                     setKey(event.getKeyCode(), true);
+                } else {
+                    transformSelected(event);
                 }
             }
 
             @Override
             public void keyReleased(KeyEvent event) {
-                setKey(event.getKeyCode(), false);
+                if (inputMode == InputMode.CAMERA) setKey(event.getKeyCode(), false);
             }
         });
         addFocusListener(new FocusAdapter() {
@@ -90,10 +110,31 @@ public final class ViewportPanel extends JPanel {
         return selectedId;
     }
 
+    public InputMode getInputMode() {
+        return inputMode;
+    }
+
+    public void setInputMode(InputMode mode) {
+        if (mode == null) throw new IllegalArgumentException("Input mode is required.");
+        if (inputMode == mode) return;
+        inputMode = mode;
+        clearKeys();
+        inputModeChanged.accept(mode);
+        repaint();
+    }
+
+    public void setClickToCamera(boolean enabled) {
+        clickToCamera = enabled;
+    }
+
     // Updates the camera based on held keys. Translation is checked against enabled
     // geometry colliders; turning and looking remain unrestricted.
     public void updateCamera() {
         long now = System.nanoTime();
+        if (inputMode != InputMode.CAMERA) {
+            lastUpdate = now;
+            return;
+        }
         double delta = Math.min(0.05, (now - lastUpdate) / 1_000_000_000.0);
         lastUpdate = now;
         double speed = (sprint ? 6.0 : 3.0) * delta;
@@ -193,10 +234,12 @@ public final class ViewportPanel extends JPanel {
     protected void paintComponent(Graphics graphics) {
         super.paintComponent(graphics);
         renderer.render(scene, camera, selectedId);
-        double scale = Math.min((double) getWidth() / SceneRenderer.WIDTH,
-                (double) getHeight() / SceneRenderer.HEIGHT);
-        int width = (int) (SceneRenderer.WIDTH * scale);
-        int height = (int) (SceneRenderer.HEIGHT * scale);
+        int renderWidth = renderer.getWidth();
+        int renderHeight = renderer.getHeight();
+        double scale = Math.min((double) getWidth() / renderWidth,
+                (double) getHeight() / renderHeight);
+        int width = (int) (renderWidth * scale);
+        int height = (int) (renderHeight * scale);
         int x = (getWidth() - width) / 2;
         int y = (getHeight() - height) / 2;
         renderer.drawScaled((Graphics2D) graphics, x, y, width, height);
@@ -206,10 +249,12 @@ public final class ViewportPanel extends JPanel {
     // objectBuffer. The click coordinates are first mapped from the scaled panel
     // space back to the internal 320x240 render buffer.
     private void selectAt(int x, int y) {
-        double scale = Math.min((double) getWidth() / SceneRenderer.WIDTH,
-                (double) getHeight() / SceneRenderer.HEIGHT);
-        int width = (int) (SceneRenderer.WIDTH * scale);
-        int height = (int) (SceneRenderer.HEIGHT * scale);
+        int renderWidth = renderer.getWidth();
+        int renderHeight = renderer.getHeight();
+        double scale = Math.min((double) getWidth() / renderWidth,
+                (double) getHeight() / renderHeight);
+        int width = (int) (renderWidth * scale);
+        int height = (int) (renderHeight * scale);
         int left = (getWidth() - width) / 2;
         int top = (getHeight() - height) / 2;
         if (scale <= 0.0 || x < left || x >= left + width || y < top || y >= top + height) {
@@ -224,6 +269,50 @@ public final class ViewportPanel extends JPanel {
             selectionChanged.run();
             repaint();
         }
+    }
+
+    private void transformSelected(KeyEvent event) {
+        SceneObject selected = scene.findById(selectedId);
+        if (selected == null) return;
+
+        int axis;
+        double direction;
+        switch (event.getKeyCode()) {
+            case KeyEvent.VK_LEFT: axis = 0; direction = -1.0; break;
+            case KeyEvent.VK_RIGHT: axis = 0; direction = 1.0; break;
+            case KeyEvent.VK_UP: axis = 1; direction = 1.0; break;
+            case KeyEvent.VK_DOWN: axis = 1; direction = -1.0; break;
+            case KeyEvent.VK_PAGE_UP: axis = 2; direction = 1.0; break;
+            case KeyEvent.VK_PAGE_DOWN: axis = 2; direction = -1.0; break;
+            default: return;
+        }
+
+        boolean rotate = event.isControlDown();
+        boolean scale = event.isAltDown();
+        if (rotate && scale) return;
+        double step = event.isShiftDown() ? 0.01 : 0.1;
+        Transform transform = selected.transform;
+        Vec3d target = scale ? transform.scale
+                : rotate ? transform.rotation : transform.position;
+        double amount = direction * (rotate ? step * 50.0 * Math.PI / 180.0 : step);
+        double value = component(target, axis) + amount;
+        if (scale) value = Math.max(0.01, value);
+        setComponent(target, axis, value);
+        transform.validate();
+        objectChanged.run();
+        showStatus.accept(rotate ? "Rotated " + selected.name + "."
+                : scale ? "Scaled " + selected.name + "."
+                : "Moved " + selected.name + ".");
+    }
+
+    private static double component(Vec3d vector, int axis) {
+        return axis == 0 ? vector.x : axis == 1 ? vector.y : vector.z;
+    }
+
+    private static void setComponent(Vec3d vector, int axis, double value) {
+        if (axis == 0) vector.x = value;
+        else if (axis == 1) vector.y = value;
+        else vector.z = value;
     }
 
     // Keyboard state uses a set of booleans (forward, backward, turn left, etc.).

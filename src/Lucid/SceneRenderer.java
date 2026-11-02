@@ -23,22 +23,45 @@ public final class SceneRenderer {
     public static final int HEIGHT = 240;
     private static final double NEAR_PLANE = 0.1;
     private static final double FAR_PLANE = 100.0;
-    private static final double AMBIENT_LIGHT = 0.22;
     private static final double SHADOW_EPSILON = 0.001;
 
     // The frame buffer is the image that will ultimately be displayed in the UI.
-    private final BufferedImage frameBuffer =
-            new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
-    private final int[] pixels = ((DataBufferInt) frameBuffer.getRaster()
-            .getDataBuffer()).getData();
+    private BufferedImage frameBuffer;
+    private int[] pixels;
     // The z-buffer tracks the closest visible depth at each pixel so far. This is
     // how the renderer decides which triangle wins when surfaces overlap.
-    private final double[] zBuffer = new double[WIDTH * HEIGHT];
+    private double[] zBuffer;
     // The object buffer stores which object owns a given pixel, which is what makes
     // clicking on the viewport possible.
-    private final int[] objectBuffer = new int[WIDTH * HEIGHT];
-    private final Mat4x4 projection = Mat4x4.makeProjection(
-            90.0, (double) WIDTH / HEIGHT, NEAR_PLANE, FAR_PLANE);
+    private int[] objectBuffer;
+    private Mat4x4 projection;
+    private RenderSettings settings = RenderSettings.defaults();
+
+    public SceneRenderer() {
+        configure(settings);
+    }
+
+    public void configure(RenderSettings renderSettings) {
+        if (renderSettings == null) {
+            throw new IllegalArgumentException("Render settings are required.");
+        }
+        settings = renderSettings;
+        frameBuffer = new BufferedImage(settings.width, settings.height,
+                BufferedImage.TYPE_INT_RGB);
+        pixels = ((DataBufferInt) frameBuffer.getRaster().getDataBuffer()).getData();
+        zBuffer = new double[settings.width * settings.height];
+        objectBuffer = new int[settings.width * settings.height];
+        projection = Mat4x4.makeProjection(settings.fieldOfView,
+                (double) settings.width / settings.height, NEAR_PLANE, FAR_PLANE);
+    }
+
+    public int getWidth() {
+        return settings.width;
+    }
+
+    public int getHeight() {
+        return settings.height;
+    }
 
     // This renders a whole frame from the given scene and camera.
     public BufferedImage render(Scene scene, Camera camera, String selectedId) {
@@ -71,8 +94,8 @@ public final class SceneRenderer {
     // Reads the object id under a given pixel in the render buffer. This is used by
     // the viewport when the user clicks to select an object.
     public String pick(Scene scene, int x, int y) {
-        if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) return null;
-        int objectIndex = objectBuffer[x + y * WIDTH];
+        if (x < 0 || x >= settings.width || y < 0 || y >= settings.height) return null;
+        int objectIndex = objectBuffer[x + y * settings.width];
         List<SceneObject> objects = scene.getObjects();
         return objectIndex >= 0 && objectIndex < objects.size()
                 ? objects.get(objectIndex).id : null;
@@ -129,9 +152,9 @@ public final class SceneRenderer {
     // omitted when another opaque mesh lies between the surface and its light.
     private int applyLighting(int baseColor, Vec3d normal, Vec3d surface,
             SceneObject receiver, List<SceneObject> objects, Camera camera) {
-        double red = AMBIENT_LIGHT;
-        double green = AMBIENT_LIGHT;
-        double blue = AMBIENT_LIGHT;
+        double red = settings.ambientLight;
+        double green = settings.ambientLight;
+        double blue = settings.ambientLight;
         for (SceneObject light : objects) {
             if (!light.isLight()) continue;
             double diffuse;
@@ -152,9 +175,9 @@ public final class SceneRenderer {
                 towardLight = toLight.normalize();
                 diffuse = distanceSquared == 0.0 ? 0.0
                         : Math.max(0.0, normal.dot(towardLight)) * light.intensity
-                                / (1.0 + 0.12 * distanceSquared);
+                                        / (1.0 + settings.pointLightFalloff * distanceSquared);
             }
-            if (diffuse > 0.0 && isOccluded(surface, towardLight, lightDistance,
+            if (settings.shadowsEnabled && diffuse > 0.0 && isOccluded(surface, towardLight, lightDistance,
                     receiver, light, objects, camera)) continue;
             red += diffuse * ((light.lightColor >> 16) & 0xFF) / 255.0;
             green += diffuse * ((light.lightColor >> 8) & 0xFF) / 255.0;
@@ -236,8 +259,8 @@ public final class SceneRenderer {
     // volume is mapped onto the visible 2D viewport.
     private Vec3d projectToScreen(Vec3d point) {
         Vec3d projected = projection.transformVec3d(point);
-        projected.x = (projected.x + 1.0) * 0.5 * WIDTH;
-        projected.y = (1.0 - (projected.y + 1.0) * 0.5) * HEIGHT;
+        projected.x = (projected.x + 1.0) * 0.5 * settings.width;
+        projected.y = (1.0 - (projected.y + 1.0) * 0.5) * settings.height;
         return projected;
     }
 
@@ -271,7 +294,8 @@ public final class SceneRenderer {
         double dx = end.x - start.x;
         double dy = end.y - start.y;
         double[] p = {-dx, dx, -dy, dy};
-        double[] q = {start.x, WIDTH - 1.0 - start.x, start.y, HEIGHT - 1.0 - start.y};
+        double[] q = {start.x, settings.width - 1.0 - start.x,
+                start.y, settings.height - 1.0 - start.y};
         double tStart = 0.0;
         double tEnd = 1.0;
         for (int i = 0; i < p.length; i++) {
@@ -309,9 +333,11 @@ public final class SceneRenderer {
     // depth should be.
     private void fillTriangle(Vec3d p0, Vec3d p1, Vec3d p2, int color, int objectIndex) {
         int minX = (int) Math.max(0, Math.min(p0.x, Math.min(p1.x, p2.x)));
-        int maxX = (int) Math.min(WIDTH - 1, Math.max(p0.x, Math.max(p1.x, p2.x)));
+        int maxX = (int) Math.min(settings.width - 1,
+                Math.max(p0.x, Math.max(p1.x, p2.x)));
         int minY = (int) Math.max(0, Math.min(p0.y, Math.min(p1.y, p2.y)));
-        int maxY = (int) Math.min(HEIGHT - 1, Math.max(p0.y, Math.max(p1.y, p2.y)));
+        int maxY = (int) Math.min(settings.height - 1,
+                Math.max(p0.y, Math.max(p1.y, p2.y)));
         double area = edgeFunction(p0, p1, p2.x, p2.y);
         if (area == 0.0) return;
 
@@ -328,7 +354,7 @@ public final class SceneRenderer {
                     w1 /= area;
                     w2 /= area;
                     double z = w0 * p0.z + w1 * p1.z + w2 * p2.z;
-                    int index = x + y * WIDTH;
+                    int index = x + y * settings.width;
                     if (z < zBuffer[index]) {
                         zBuffer[index] = z;
                         pixels[index] = color;
@@ -344,8 +370,8 @@ public final class SceneRenderer {
     }
 
     private void drawDepthPixel(int x, int y, double z, int color, int objectIndex) {
-        if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) return;
-        int index = x + y * WIDTH;
+        if (x < 0 || x >= settings.width || y < 0 || y >= settings.height) return;
+        int index = x + y * settings.width;
         if (z <= zBuffer[index] + 0.001) {
             pixels[index] = color;
             objectBuffer[index] = objectIndex;
