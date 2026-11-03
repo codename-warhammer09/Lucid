@@ -16,7 +16,8 @@ import java.util.Properties;
  * still being adequate for a small editor. Each object is flattened into a few
  * named properties such as position, rotation, scale, color, light intensity, and
  * whether a geometry object blocks camera movement. Missing collision properties
- * in earlier version-1 files are treated as disabled.
+ * in earlier version-1 files are treated as disabled. Built-in templates and
+ * user scenes use this same validated format.
  */
 public final class SceneIO {
     private static final String FORMAT_VERSION = "1";

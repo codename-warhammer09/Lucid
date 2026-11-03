@@ -35,7 +35,6 @@ import javax.swing.JToolBar;
 import javax.swing.JToggleButton;
 import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
-import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.text.JTextComponent;
@@ -45,7 +44,7 @@ public final class SceneEditor extends JFrame {
     // The editor keeps the scene, camera, and renderer in one place so the UI can
     // update objects, manipulate the camera, and render the current world without
     // complex event plumbing.
-    private final Scene scene = new Scene();
+    private final Scene scene;
     private final Camera camera = new Camera();
     private final SceneRenderer renderer = new SceneRenderer();
     private final Preferences editorPreferences = Preferences.userNodeForPackage(SceneEditor.class);
@@ -69,7 +68,26 @@ public final class SceneEditor extends JFrame {
     private RenderSettings renderSettings;
 
     public SceneEditor() {
+        this(new Scene(), null, false);
+    }
+
+    public SceneEditor(Scene initialScene, Path initialFile) {
+        this(initialScene, initialFile, false);
+    }
+
+    public SceneEditor(Scene initialScene, Path initialFile, boolean templateScene) {
         super("Lucid — 3D Engine");
+        if (initialScene == null) {
+            throw new IllegalArgumentException("An initial scene is required.");
+        }
+        scene = initialScene;
+        currentFile = initialFile;
+        if (templateScene) {
+            camera.position.x = 0.0;
+            camera.position.y = 2.5;
+            camera.position.z = -9.0;
+            camera.pitch = Math.toRadians(9.0);
+        }
         renderSettings = RenderSettings.load(editorPreferences);
         renderer.configure(renderSettings);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -94,6 +112,14 @@ public final class SceneEditor extends JFrame {
         add(createWorkspace(), BorderLayout.CENTER);
         add(status, BorderLayout.SOUTH);
         bindEditorKeys();
+        refreshObjectList();
+        if (scene.getObjects().isEmpty()) {
+            setStatus("Ready — add an object to begin.");
+        } else if (currentFile == null) {
+            setStatus("Loaded template. Save as... to choose a scene file.");
+        } else {
+            setStatus("Loaded " + currentFile.getFileName() + ".");
+        }
 
         // The editor runs a small animation loop to update the camera and repaint the
         // viewport continuously while the user navigates the scene.
@@ -520,6 +546,6 @@ public final class SceneEditor extends JFrame {
     }
 
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new SceneEditor().setVisible(true));
+        StartupWindow.launch();
     }
 }

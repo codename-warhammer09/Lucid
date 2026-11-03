@@ -9,8 +9,13 @@ templates; it is not intended to represent the finished scope of the engine.
 
 The editor currently includes:
 
+- A startup window with options to start blank, load a built-in template, load
+  an existing scene, or open the project documentation.
 - An initially empty scene with cube, thick-wall, directional-light, and
   point-light templates.
+- Two point-lit `.lucid` examples in `templates/`: a wide flat plain and a
+  roofed room/maze interior. User scenes placed in `scenes/` are listed at
+  startup.
 - A software-rendered viewport with perspective projection, near/far clipping,
   depth buffering, ambient and directional/point lighting with opaque-mesh
   shadow occlusion.
@@ -45,30 +50,48 @@ javac -d bin src\Lucid\*.java
 java -cp bin Lucid.Lucid
 ```
 
-The `Lucid.Lucid` entry point opens the integrated scene editor.
+The `Lucid.Lucid` entry point opens the startup window. Choose **Start from
+Blank Scene**, **Start from Template**, or **Load Existing Scene** to open the
+editor. Template and scene options list `.lucid` files from their project
+folders; existing scenes can also be browsed from elsewhere. **View
+Documentation** opens [Documentation.md](Documentation.md) in the system's
+default application and leaves the startup window open.
+
+The startup window displays developer credit, copyright, and version
+information: Arsal Abbas Mirza, Copyright © 2026 Arsal Abbas Mirza, Version 0.4.
 
 ## Editor workflow
 
-1. Use **Add Cube**, **Add Wall**, **Add Directional Light**, or **Add Point
-   Light** to add an object to the initially empty scene.
-2. Use **Select** mode and turn off **Click to Camera** to select objects by
+1. Choose **Start from Blank Scene** to begin empty, **Start from Template** to
+   use a demonstration in `templates/`, or **Load Existing Scene** to restore a
+   `.lucid` file. Save user scenes in `scenes/` to list them at startup; use
+   **Browse...** to open a file stored elsewhere.
+2. Use **Add Cube**, **Add Wall**, **Add Directional Light**, or **Add Point
+   Light** to add an object to an empty scene.
+3. Use **Select** mode and turn off **Click to Camera** to select objects by
    clicking them in the viewport; objects can also be selected from the scene
    list. The selection is outlined and its values appear in the Properties panel.
    With **Click to Camera** enabled (the default), a viewport click enters Camera
    mode; use **Select** in the toolbar to return.
-3. Edit the values and choose **Apply**. Positions and scales use world units;
+4. Edit the values and choose **Apply**. Positions and scales use world units;
    rotations are entered in degrees. Object colors accept six hexadecimal RGB
    digits, with or without a leading `#`. Enable **Camera collision enabled**
    on a cube or wall to stop the camera at its surface; it is off by default.
-4. Choose **File → Save**, **Save as...**, or **Open...** to persist and restore
+5. Choose **File → Save**, **Save as...**, or **Open...** to persist and restore
    scenes. Opening a scene validates the file before replacing the current
    scene. Invalid files are reported without discarding the current scene.
-5. Open **View → Render settings...** to adjust the viewport renderer. Settings
+6. Open **View → Render settings...** to adjust the viewport renderer. Settings
    apply immediately when accepted and persist across editor launches; they are
    not written into `.lucid` scene files.
 
-The wall template is a box with a rectangular footprint and a small but
-non-zero thickness; its dimensions can be adjusted with the scale fields.
+The built-in [wide plain](templates/wide-plain.lucid) uses rotated wall objects
+as floor panels and point lights to demonstrate a broad open space. The
+[room/maze](templates/room-maze.lucid) example includes a roof, interior
+partitions, an entrance, camera-colliding walls, and point lights. Templates
+load as unsaved scenes so saving cannot overwrite the shipped examples. The
+wall template used by the editor is a box with a rectangular footprint and a
+small but non-zero thickness; its dimensions can be adjusted with the scale
+fields.
 Directional lights use their rotation to aim the light. Point lights use
 their position, color, and intensity to illuminate nearby faces.
 The Render Settings panel controls global ambient light, point-light falloff,
@@ -119,7 +142,7 @@ Potential follow-ups, in priority order:
 
 ## Scene file format
 
-``.lucid` files are versioned Java Properties text files. Object entries store
+`.lucid` files are versioned Java Properties text files. Object entries store
 their ID, name, template type, transform, raster color, light settings, and
 camera-collision setting. Rotation values in the file are in degrees. Files
 without the collision property remain valid and default to collision off. The
@@ -132,7 +155,8 @@ libraries.
 src/
   Lucid/
     Lucid.java          Application entry point
-    SceneEditor.java    Editor window, scene list, templates, and file actions
+    StartupWindow.java  Startup choices, scene/template discovery, and docs
+    SceneEditor.java    Editor window, scene list, and file actions
     ViewportPanel.java  Viewport input, camera movement, and display
     PropertiesPanel.java Object inspector and validation
     SceneRenderer.java  Software rendering, lighting, highlighting, and picking
@@ -146,6 +170,9 @@ src/
     Mat4x4.java         Matrix and projection operations
     Triangle.java       Triangle data
     Vec3d.java          3D vector operations
+templates/              Built-in .lucid demonstration scenes
+scenes/                 User scenes listed at startup
+Documentation.md        User guide opened from the startup window
 lib/                    Optional location for external JARs; none are required
 bin/                    Compiled class output
 .vscode/                 VS Code Java project settings

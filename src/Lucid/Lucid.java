@@ -5,9 +5,8 @@
 package Lucid;
 
 /**
- * This is the very small entry point for the application. In practice it simply
- * hands control to the editor, which is where the scene is created, edited, and
- * rendered on-screen.
+ * This is the application entry point. It opens the startup window, which routes
+ * the user to a blank scene, a built-in template, or an existing scene.
  *
  * The project is intentionally lightweight: the editor builds scenes from
  * transformed objects, renders opaque-mesh light occlusion, and lets the camera
@@ -18,6 +17,6 @@ public final class Lucid {
     private Lucid() {}
 
     public static void main(String[] args) {
-        SceneEditor.main(args);
+        StartupWindow.launch();
     }
 }
