@@ -1,8 +1,8 @@
 # Lucid Engine Documentation
 
 Lucid is a lightweight Java scene editor and software-rendered 3D engine. This
-guide combines the practical setup, editor controls, scene workflow, and `.lucid`
-format reference in one place.
+v0.5 guide combines the practical setup, editor controls, scene workflow, and
+`.lucid` format reference in one place.
 
 ## Starting Lucid
 
@@ -78,7 +78,8 @@ Keyboard shortcuts do not act while editing a text field.
 | Select mode: `Shift` + transform key | Use a finer adjustment step |
 | `P` | Focus the selected object's Properties |
 | `Delete` | Delete the selected object |
-| `Esc` | Close the editor |
+| `Esc` with an object selected | Deselect it |
+| `Esc` with no object selected | Close the editor |
 
 Transform keyboard steps are 0.1 world units for movement and scale and 5
 degrees for rotation. Hold Shift for 0.01 units or 0.5 degrees.
@@ -87,10 +88,29 @@ degrees for rotation. Hold Shift for 0.01 units or 0.5 degrees.
 
 The viewport uses a software renderer with perspective projection, near/far
 clipping, depth buffering, ambient lighting, and directional/point lighting.
-Opaque geometry can cast shadows. Global ambient light, point-light falloff,
-shadow rendering, field of view, and internal render resolution can be adjusted
-in **View → Render settings...**. Higher render resolutions improve detail at a
-higher software-rendering cost.
+In per-pixel mode, diffuse lighting and shadow visibility are evaluated at each
+visible surface pixel. This lets a shadow boundary cross a face instead of
+applying one triangle-wide light result. Surfaces use flat face normals; the
+renderer is not a physically based material shader.
+
+Opaque geometry can cast shadows. **View → Render settings...** controls
+per-face (fast) or per-pixel lighting, shadows, global shadow softness and sample
+quality, ambient light, point-light falloff, field of view, and internal render
+resolution. Soft shadows estimate the visible fraction of multiple rays around
+each light direction. Low quality uses one hard-shadow sample; medium and high
+use four and eight samples. A softness of zero also produces hard shadows.
+Per-pixel shading, more shadow samples, and higher render resolutions increase
+software-rendering cost. These options persist as editor preferences and do not
+change `.lucid` scene files. The default is per-pixel lighting with one hard
+shadow sample; select medium or high samples to enable soft penumbrae.
+
+**View → Wireframe overlay** shows depth-tested box edges for visible scene
+objects; the selected object's edges remain yellow.
+
+Future rendering improvements could include world-grid and axis guides,
+antialiasing, per-light source sizes, gamma-aware color handling, and
+ambient-occlusion-style contact shading. Per-light source sizes would allow more
+physical control of soft shadows than the current global angular approximation.
 
 Directional lights use their rotation to aim the light. Point lights use
 position, color, and intensity to illuminate nearby faces. Geometry can opt into

@@ -18,9 +18,19 @@ public final class RenderSettings {
     public final double pointLightFalloff;
     public final int width;
     public final int height;
+    public final boolean perPixelLighting;
+    public final double shadowSoftness;
+    public final int shadowSamples;
 
     public RenderSettings(double ambientLight, boolean shadowsEnabled, double fieldOfView,
             double pointLightFalloff, int width, int height) {
+        this(ambientLight, shadowsEnabled, fieldOfView, pointLightFalloff, width, height,
+                true, 3.0, 1);
+    }
+
+    public RenderSettings(double ambientLight, boolean shadowsEnabled, double fieldOfView,
+            double pointLightFalloff, int width, int height, boolean perPixelLighting,
+            double shadowSoftness, int shadowSamples) {
         if (!Double.isFinite(ambientLight) || ambientLight < 0.0 || ambientLight > 1.0) {
             throw new IllegalArgumentException("Ambient light must be between 0 and 1.");
         }
@@ -34,16 +44,25 @@ public final class RenderSettings {
         if (!isSupportedResolution(width, height)) {
             throw new IllegalArgumentException("Unsupported internal render resolution.");
         }
+        if (!Double.isFinite(shadowSoftness) || shadowSoftness < 0.0 || shadowSoftness > 15.0) {
+            throw new IllegalArgumentException("Shadow softness must be between 0 and 15 degrees.");
+        }
+        if (shadowSamples != 1 && shadowSamples != 4 && shadowSamples != 8) {
+            throw new IllegalArgumentException("Shadow samples must be 1, 4, or 8.");
+        }
         this.ambientLight = ambientLight;
         this.shadowsEnabled = shadowsEnabled;
         this.fieldOfView = fieldOfView;
         this.pointLightFalloff = pointLightFalloff;
         this.width = width;
         this.height = height;
+        this.perPixelLighting = perPixelLighting;
+        this.shadowSoftness = shadowSoftness;
+        this.shadowSamples = shadowSamples;
     }
 
     public static RenderSettings defaults() {
-        return new RenderSettings(0.22, true, 90.0, 0.12, 320, 240);
+        return new RenderSettings(0.22, true, 90.0, 0.12, 320, 240, true, 3.0, 1);
     }
 
     public static RenderSettings load(Preferences preferences) {
@@ -54,7 +73,10 @@ public final class RenderSettings {
                 preferences.getDouble("fieldOfView", defaults.fieldOfView),
                 preferences.getDouble("pointLightFalloff", defaults.pointLightFalloff),
                 preferences.getInt("renderWidth", defaults.width),
-                preferences.getInt("renderHeight", defaults.height));
+                preferences.getInt("renderHeight", defaults.height),
+                preferences.getBoolean("perPixelLighting", defaults.perPixelLighting),
+                preferences.getDouble("shadowSoftness", defaults.shadowSoftness),
+                preferences.getInt("shadowSamples", defaults.shadowSamples));
     }
 
     public void save(Preferences preferences) throws java.util.prefs.BackingStoreException {
@@ -64,6 +86,9 @@ public final class RenderSettings {
         preferences.putDouble("pointLightFalloff", pointLightFalloff);
         preferences.putInt("renderWidth", width);
         preferences.putInt("renderHeight", height);
+        preferences.putBoolean("perPixelLighting", perPixelLighting);
+        preferences.putDouble("shadowSoftness", shadowSoftness);
+        preferences.putInt("shadowSamples", shadowSamples);
         preferences.flush();
     }
 

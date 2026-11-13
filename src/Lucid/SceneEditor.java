@@ -51,6 +51,8 @@ public final class SceneEditor extends JFrame {
     private final JCheckBox clickToCameraCheck = new JCheckBox("Click to Camera", true);
     private final JCheckBoxMenuItem clickToCameraMenuItem =
             new JCheckBoxMenuItem("Click viewport to enter Camera mode", true);
+    private final JCheckBoxMenuItem wireframeOverlayMenuItem =
+            new JCheckBoxMenuItem("Wireframe overlay");
     private final JToggleButton selectModeButton = new JToggleButton("Select");
     private final JToggleButton cameraModeButton = new JToggleButton("Camera");
     private final JRadioButtonMenuItem selectModeMenuItem =
@@ -103,6 +105,10 @@ public final class SceneEditor extends JFrame {
                 setClickToCamera(clickToCameraCheck.isSelected()));
         clickToCameraMenuItem.addActionListener(event ->
                 setClickToCamera(clickToCameraMenuItem.isSelected()));
+        wireframeOverlayMenuItem.addActionListener(event -> {
+            renderer.setWireframeOverlayEnabled(wireframeOverlayMenuItem.isSelected());
+            viewport.repaint();
+        });
         selectModeButton.addActionListener(event -> activateInputMode(ViewportPanel.InputMode.SELECT));
         cameraModeButton.addActionListener(event -> activateInputMode(ViewportPanel.InputMode.CAMERA));
         selectModeMenuItem.addActionListener(event -> activateInputMode(ViewportPanel.InputMode.SELECT));
@@ -222,6 +228,7 @@ public final class SceneEditor extends JFrame {
         view.add(cameraModeMenuItem);
         view.addSeparator();
         view.add(clickToCameraMenuItem);
+        view.add(wireframeOverlayMenuItem);
         view.add(menuItem("Render settings...", event -> showRenderSettings()));
         bar.add(view);
         return bar;
@@ -338,6 +345,29 @@ public final class SceneEditor extends JFrame {
         falloff.setPaintLabels(true);
         JCheckBox shadows = new JCheckBox("Enable opaque-mesh shadows",
                 renderSettings.shadowsEnabled);
+        JComboBox<String> lightingQuality = new JComboBox<>(new String[] {
+            "Fast (per-face)",
+            "Accurate (per-pixel)"
+        });
+        lightingQuality.setSelectedIndex(renderSettings.perPixelLighting ? 1 : 0);
+        lightingQuality.setToolTipText(
+                "Per-pixel lighting varies point-light falloff and shadow visibility across each face.");
+        JSlider shadowSoftness = new JSlider(0, 15,
+                (int) Math.round(renderSettings.shadowSoftness));
+        shadowSoftness.setMajorTickSpacing(5);
+        shadowSoftness.setPaintTicks(true);
+        shadowSoftness.setPaintLabels(true);
+        shadowSoftness.setToolTipText(
+                "Angular spread for the global soft-shadow approximation; zero is hard shadows.");
+        JComboBox<String> shadowSamples = new JComboBox<>(new String[] {
+            "Low (1, hard shadows)",
+            "Medium (4 samples)",
+            "High (8 samples)"
+        });
+        shadowSamples.setSelectedIndex(renderSettings.shadowSamples == 1 ? 0
+                : renderSettings.shadowSamples == 4 ? 1 : 2);
+        shadowSamples.setToolTipText(
+                "More samples smooth shadow edges but increase software-rendering cost.");
         JComboBox<String> resolution = new JComboBox<>(new String[] {
             "320 x 240 (Fast)",
             "640 x 480",
@@ -356,6 +386,14 @@ public final class SceneEditor extends JFrame {
         form.add(resolution);
         form.add(new JLabel("Shadows"));
         form.add(shadows);
+        form.add(new JLabel("Lighting quality"));
+        form.add(lightingQuality);
+        form.add(new JLabel("Shadow softness (degrees)"));
+        form.add(shadowSoftness);
+        form.add(new JLabel("Shadow sample quality"));
+        form.add(shadowSamples);
+        form.add(new JLabel("Defaults: per-pixel, hard shadows"));
+        form.add(new JLabel("Per-pixel and more samples cost more"));
 
         int choice = JOptionPane.showConfirmDialog(this, form, "Render Settings",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
@@ -367,7 +405,11 @@ public final class SceneEditor extends JFrame {
                     ambient.getValue() / 100.0, shadows.isSelected(),
                     fieldOfView.getValue(), falloff.getValue() / 100.0,
                     RenderSettings.getResolutionWidth(resolutionIndex),
-                    RenderSettings.getResolutionHeight(resolutionIndex));
+                    RenderSettings.getResolutionHeight(resolutionIndex),
+                    lightingQuality.getSelectedIndex() == 1,
+                    shadowSoftness.getValue(),
+                    shadowSamples.getSelectedIndex() == 0 ? 1
+                            : shadowSamples.getSelectedIndex() == 1 ? 4 : 8);
             updated.save(editorPreferences);
             renderSettings = updated;
             renderer.configure(renderSettings);
@@ -434,6 +476,20 @@ public final class SceneEditor extends JFrame {
         properties.focusProperties();
     }
 
+    private void handleEscape() {
+        if (KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner()
+                instanceof JTextComponent) return;
+        SceneObject selected = scene.findById(selectedId);
+        if (selected != null) {
+            selectedId = null;
+            refreshObjectList();
+            setStatus("Selection cleared.");
+            viewport.requestFocusInWindow();
+            return;
+        }
+        dispatchEvent(new WindowEvent(this, WindowEvent.WINDOW_CLOSING));
+    }
+
     // Keyboard shortcuts are wired through the window's action map. This gives us a
     // simple way to handle Delete, the P key, and Escape without cluttering the
     // rest of the editor logic.
@@ -455,11 +511,11 @@ public final class SceneEditor extends JFrame {
             }
         });
         getRootPane().getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW)
-                .put(KeyStroke.getKeyStroke("ESCAPE"), "close-editor");
-        getRootPane().getActionMap().put("close-editor", new AbstractAction() {
+                .put(KeyStroke.getKeyStroke("ESCAPE"), "escape-editor");
+        getRootPane().getActionMap().put("escape-editor", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent event) {
-                dispatchEvent(new WindowEvent(SceneEditor.this, WindowEvent.WINDOW_CLOSING));
+                handleEscape();
             }
         });
     }

@@ -17,15 +17,16 @@ The editor currently includes:
   roofed room/maze interior. User scenes placed in `scenes/` are listed at
   startup.
 - A software-rendered viewport with perspective projection, near/far clipping,
-  depth buffering, ambient and directional/point lighting with opaque-mesh
-  shadow occlusion.
+  depth buffering, ambient and directional/point lighting with per-pixel
+  diffuse shading and multi-sample opaque-mesh shadows.
 - A scene object list, viewport selection, and a visible outline for the
   selected object, with explicit Select and Camera input modes.
 - An inspector for object name, position, rotation, scale, color, and optional
   camera collision. Light objects also expose light color and intensity.
-- Editor-wide render settings for ambient lighting, shadows, point-light falloff,
-  field of view, and internal render resolution. These settings are stored as
-  user preferences, separately from scene files.
+- Editor-wide render settings for per-face/per-pixel lighting, shadow softness
+  and quality, ambient lighting, point-light falloff, field of view, and internal
+  render resolution. These settings are stored as user preferences, separately
+  from scene files.
 - Scene creation, opening, and saving in a versioned `.lucid` text format.
 
 The implementation and controls below describe what exists now and will evolve
@@ -58,7 +59,7 @@ Documentation** opens [Documentation.md](Documentation.md) in the system's
 default application and leaves the startup window open.
 
 The startup window displays developer credit, copyright, and version
-information: Arsal Abbas Mirza, Copyright © 2026 Arsal Abbas Mirza, Version 0.4.
+information: Arsal Abbas Mirza, Copyright © 2026 Arsal Abbas Mirza, Version v0.5.
 
 ## Editor workflow
 
@@ -95,9 +96,18 @@ fields.
 Directional lights use their rotation to aim the light. Point lights use
 their position, color, and intensity to illuminate nearby faces.
 The Render Settings panel controls global ambient light, point-light falloff,
-and whether opaque geometry casts shadows. Field of view and internal resolution
-are also adjustable; higher resolutions improve detail at a higher software
-rendering cost.
+whether opaque geometry casts shadows, shadow softness and sample quality,
+lighting mode, field of view, and internal resolution. These settings persist as
+editor preferences and do not modify scene files. Per-pixel lighting evaluates
+diffuse contribution and shadow visibility at each visible surface pixel, so a
+shadow edge can cross a face instead of darkening its entire triangle. The
+**Fast (per-face)** mode is available for lower CPU use. Softness controls the
+angular spread of the sampled light direction; low (one-sample) shadows remain
+hard, while medium/high sample presets estimate a softer penumbra. Per-pixel
+lighting with low (hard-shadow) quality is the default; more samples and higher
+internal resolutions cost more CPU. **View → Wireframe overlay**
+toggles depth-tested edge outlines for visible scene objects; the selected object
+keeps its yellow highlight.
 
 ## Current controls
 
@@ -124,7 +134,8 @@ do not act while editing a text field.
 | Select mode: `Shift` + transform key | Use a finer adjustment step |
 | `P` | Focus the selected object's Properties |
 | `Delete` | Delete the selected object |
-| `Esc` | Close the editor |
+| `Esc` with an object selected | Deselect it |
+| `Esc` with no object selected | Close the editor |
 
 Transform keyboard steps are 0.1 world units for movement and scale and 5
 degrees for rotation; hold Shift for 0.01 units or 0.5 degrees. The inspector
@@ -139,6 +150,14 @@ Potential follow-ups, in priority order:
 3. Optional position/rotation/scale snapping and configurable transform steps.
 4. Unsaved-scene indicators and prompts before discarding changes.
 5. Inspector reset/revert actions and an in-editor shortcut reference.
+
+Potential rendering improvements include a world grid and axis guides for spatial
+orientation, followed by optional edge antialiasing or supersampling, which would
+need to balance smoother edges against the software renderer's per-pixel cost.
+Per-light source sizes, gamma-aware color handling, and ambient-occlusion-style
+contact shading are further candidates beyond the current global soft-shadow
+approximation. Render settings could later expose per-light source sizes and
+lighting diagnostics while retaining straightforward fast-quality presets.
 
 ## Scene file format
 

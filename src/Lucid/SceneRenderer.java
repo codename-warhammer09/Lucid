@@ -24,6 +24,79 @@ public final class SceneRenderer {
     private static final double NEAR_PLANE = 0.1;
     private static final double FAR_PLANE = 100.0;
     private static final double SHADOW_EPSILON = 0.001;
+    private static final double GOLDEN_ANGLE = Math.PI * (3.0 - Math.sqrt(5.0));
+
+    private static final class LightData {
+        private final SceneObject object;
+        private final Vec3d direction;
+
+        private LightData(SceneObject object, Vec3d direction) {
+            this.object = object;
+            this.direction = direction;
+        }
+    }
+
+    private static final class OccluderData {
+        private final SceneObject object;
+        private final Vec3d position;
+        private final double xx;
+        private final double xy;
+        private final double xz;
+        private final double yx;
+        private final double yy;
+        private final double yz;
+        private final double zx;
+        private final double zy;
+        private final double zz;
+        private final double minX;
+        private final double minY;
+        private final double minZ;
+        private final double maxX;
+        private final double maxY;
+        private final double maxZ;
+
+        private OccluderData(SceneObject object, Camera camera) {
+            this.object = object;
+            position = object.transform.position;
+            Vec3d[] vertices = MeshFactory.getBoxVertices();
+            double boundsMinX = Double.POSITIVE_INFINITY;
+            double boundsMinY = Double.POSITIVE_INFINITY;
+            double boundsMinZ = Double.POSITIVE_INFINITY;
+            double boundsMaxX = Double.NEGATIVE_INFINITY;
+            double boundsMaxY = Double.NEGATIVE_INFINITY;
+            double boundsMaxZ = Double.NEGATIVE_INFINITY;
+            for (Vec3d vertex : vertices) {
+                Vec3d world = camera.transformLocalPoint(object, vertex);
+                boundsMinX = Math.min(boundsMinX, world.x);
+                boundsMinY = Math.min(boundsMinY, world.y);
+                boundsMinZ = Math.min(boundsMinZ, world.z);
+                boundsMaxX = Math.max(boundsMaxX, world.x);
+                boundsMaxY = Math.max(boundsMaxY, world.y);
+                boundsMaxZ = Math.max(boundsMaxZ, world.z);
+            }
+            minX = boundsMinX;
+            minY = boundsMinY;
+            minZ = boundsMinZ;
+            maxX = boundsMaxX;
+            maxY = boundsMaxY;
+            maxZ = boundsMaxZ;
+            Vec3d localX = camera.transformWorldDirectionToLocal(object,
+                    new Vec3d(1.0, 0.0, 0.0));
+            Vec3d localY = camera.transformWorldDirectionToLocal(object,
+                    new Vec3d(0.0, 1.0, 0.0));
+            Vec3d localZ = camera.transformWorldDirectionToLocal(object,
+                    new Vec3d(0.0, 0.0, 1.0));
+            xx = localX.x;
+            xy = localY.x;
+            xz = localZ.x;
+            yx = localX.y;
+            yy = localY.y;
+            yz = localZ.y;
+            zx = localX.z;
+            zy = localY.z;
+            zz = localZ.z;
+        }
+    }
 
     // The frame buffer is the image that will ultimately be displayed in the UI.
     private BufferedImage frameBuffer;
@@ -36,6 +109,7 @@ public final class SceneRenderer {
     private int[] objectBuffer;
     private Mat4x4 projection;
     private RenderSettings settings = RenderSettings.defaults();
+    private boolean wireframeOverlayEnabled;
 
     public SceneRenderer() {
         configure(settings);
@@ -63,6 +137,10 @@ public final class SceneRenderer {
         return settings.height;
     }
 
+    public void setWireframeOverlayEnabled(boolean enabled) {
+        wireframeOverlayEnabled = enabled;
+    }
+
     // This renders a whole frame from the given scene and camera.
     public BufferedImage render(Scene scene, Camera camera, String selectedId) {
         List<SceneObject> objects = scene.getObjects();
@@ -74,17 +152,34 @@ public final class SceneRenderer {
         // modeled naturally: turn left/right and look up/down.
         Mat4x4 yaw = Mat4x4.makeRotationY(camera.yaw);
         Mat4x4 pitch = Mat4x4.makeRotationX(-camera.pitch);
+        Mat4x4 inverseYaw = Mat4x4.makeRotationY(-camera.yaw);
+        Mat4x4 inversePitch = Mat4x4.makeRotationX(camera.pitch);
+        List<LightData> lights = new ArrayList<>();
+        List<OccluderData> occluders = new ArrayList<>();
+        for (SceneObject object : objects) {
+            if (object.isLight()) {
+                Vec3d direction = object.type == SceneObject.Type.DIRECTIONAL_LIGHT
+                        ? camera.transformLocalDirection(
+                                new Vec3d(0.0, 0.0, -1.0), object.transform.rotation).normalize()
+                        : null;
+                lights.add(new LightData(object, direction));
+            } else {
+                occluders.add(new OccluderData(object, camera));
+            }
+        }
         for (int i = 0; i < objects.size(); i++) {
             SceneObject object = objects.get(i);
             if (!object.isLight()) {
-                renderObject(object, i, objects, camera, yaw, pitch,
+                renderObject(object, i, lights, occluders, camera, yaw, pitch,
+                        inverseYaw, inversePitch,
                         selectedId != null && selectedId.equals(object.id));
             }
         }
         for (int i = 0; i < objects.size(); i++) {
             SceneObject object = objects.get(i);
             if (object.isLight()) {
-                renderObject(object, i, objects, camera, yaw, pitch,
+                renderObject(object, i, lights, occluders, camera, yaw, pitch,
+                        inverseYaw, inversePitch,
                         selectedId != null && selectedId.equals(object.id));
             }
         }
@@ -102,8 +197,10 @@ public final class SceneRenderer {
     }
 
     // Draws one object's mesh.
-    private void renderObject(SceneObject object, int objectIndex, List<SceneObject> objects,
-            Camera camera, Mat4x4 yaw, Mat4x4 pitch, boolean selected) {
+    private void renderObject(SceneObject object, int objectIndex, List<LightData> lights,
+            List<OccluderData> occluders,
+            Camera camera, Mat4x4 yaw, Mat4x4 pitch,
+            Mat4x4 inverseYaw, Mat4x4 inversePitch, boolean selected) {
         Vec3d[] worldVertices = MeshFactory.getBoxVertices();
         Vec3d[] viewVertices = new Vec3d[worldVertices.length];
         for (int i = 0; i < worldVertices.length; i++) {
@@ -127,61 +224,90 @@ public final class SceneRenderer {
             }
             clipped = clipPolygon(clipped, NEAR_PLANE, true);
             clipped = clipPolygon(clipped, FAR_PLANE, false);
-            int color = object.isLight()
+            int faceColor = object.isLight()
                     ? object.color
-                    : applyLighting(object.color, normal, world0, object, objects, camera);
+                    : settings.perPixelLighting ? object.color
+                            : applyLighting(object.color, normal, world0, object,
+                                    lights, occluders);
             for (int i = 1; i < clipped.size() - 1; i++) {
-                fillTriangle(projectToScreen(clipped.get(0)),
-                        projectToScreen(clipped.get(i)),
-                        projectToScreen(clipped.get(i + 1)), color, objectIndex);
+                Vec3d view0 = clipped.get(0);
+                Vec3d view1 = clipped.get(i);
+                Vec3d view2 = clipped.get(i + 1);
+                fillTriangle(projectToScreen(view0), projectToScreen(view1),
+                        projectToScreen(view2), view0, view1, view2,
+                        viewToWorld(view0, camera, inverseYaw, inversePitch),
+                        viewToWorld(view1, camera, inverseYaw, inversePitch),
+                        viewToWorld(view2, camera, inverseYaw, inversePitch),
+                        object.color, faceColor, normal, object.isLight() ? null : object,
+                        objectIndex, lights, occluders);
             }
         }
 
-        if (selected) {
+        if (selected || wireframeOverlayEnabled) {
+            int edgeColor = selected ? 0xFFFF30 : 0x8292AA;
             for (int[] edge : edges) {
                 Vec3d[] line = clipLineToDepth(viewVertices[edge[0]], viewVertices[edge[1]]);
                 if (line != null) {
                     drawDepthLine(projectToScreen(line[0]), projectToScreen(line[1]),
-                            0xFFFF30, objectIndex);
+                            edgeColor, objectIndex);
                 }
             }
         }
     }
 
-    // Applies ambient and diffuse lighting. Each positive diffuse contribution is
-    // omitted when another opaque mesh lies between the surface and its light.
+    // Applies ambient and diffuse lighting at a surface sample.
     private int applyLighting(int baseColor, Vec3d normal, Vec3d surface,
-            SceneObject receiver, List<SceneObject> objects, Camera camera) {
+            SceneObject receiver, List<LightData> lights,
+            List<OccluderData> occluders) {
+        return applyLighting(baseColor, normal.x, normal.y, normal.z,
+                surface.x, surface.y, surface.z, receiver, lights, occluders);
+    }
+
+    private int applyLighting(int baseColor, double normalX, double normalY, double normalZ,
+            double surfaceX, double surfaceY, double surfaceZ, SceneObject receiver,
+            List<LightData> lights, List<OccluderData> occluders) {
         double red = settings.ambientLight;
         double green = settings.ambientLight;
         double blue = settings.ambientLight;
-        for (SceneObject light : objects) {
-            if (!light.isLight()) continue;
+        for (LightData lightData : lights) {
+            SceneObject light = lightData.object;
             double diffuse;
-            Vec3d towardLight;
+            double towardX;
+            double towardY;
+            double towardZ;
             double lightDistance;
             if (light.type == SceneObject.Type.DIRECTIONAL_LIGHT) {
                 // Sunlight is modeled as a single direction, not a point in space.
-                towardLight = camera.transformLocalDirection(
-                        new Vec3d(0.0, 0.0, -1.0), light.transform.rotation).normalize();
-                diffuse = Math.max(0.0, normal.dot(towardLight)) * light.intensity;
+                towardX = lightData.direction.x;
+                towardY = lightData.direction.y;
+                towardZ = lightData.direction.z;
+                diffuse = Math.max(0.0, normalX * towardX + normalY * towardY
+                        + normalZ * towardZ) * light.intensity;
                 lightDistance = Double.POSITIVE_INFINITY;
             } else {
                 // A point light spreads in all directions, so its brightness drops as
                 // the surface grows farther away from the light source.
-                Vec3d toLight = light.transform.position.sub(surface);
-                double distanceSquared = toLight.dot(toLight);
+                double toLightX = light.transform.position.x - surfaceX;
+                double toLightY = light.transform.position.y - surfaceY;
+                double toLightZ = light.transform.position.z - surfaceZ;
+                double distanceSquared = toLightX * toLightX + toLightY * toLightY
+                        + toLightZ * toLightZ;
                 lightDistance = Math.sqrt(distanceSquared);
-                towardLight = toLight.normalize();
+                towardX = distanceSquared == 0.0 ? 0.0 : toLightX / lightDistance;
+                towardY = distanceSquared == 0.0 ? 0.0 : toLightY / lightDistance;
+                towardZ = distanceSquared == 0.0 ? 0.0 : toLightZ / lightDistance;
                 diffuse = distanceSquared == 0.0 ? 0.0
-                        : Math.max(0.0, normal.dot(towardLight)) * light.intensity
+                        : Math.max(0.0, normalX * towardX + normalY * towardY
+                                + normalZ * towardZ) * light.intensity
                                         / (1.0 + settings.pointLightFalloff * distanceSquared);
             }
-            if (settings.shadowsEnabled && diffuse > 0.0 && isOccluded(surface, towardLight, lightDistance,
-                    receiver, light, objects, camera)) continue;
-            red += diffuse * ((light.lightColor >> 16) & 0xFF) / 255.0;
-            green += diffuse * ((light.lightColor >> 8) & 0xFF) / 255.0;
-            blue += diffuse * (light.lightColor & 0xFF) / 255.0;
+            double visibility = settings.shadowsEnabled && diffuse > 0.0
+                    ? shadowVisibility(surfaceX, surfaceY, surfaceZ,
+                            towardX, towardY, towardZ, lightDistance,
+                            receiver, occluders) : 1.0;
+            red += diffuse * visibility * ((light.lightColor >> 16) & 0xFF) / 255.0;
+            green += diffuse * visibility * ((light.lightColor >> 8) & 0xFF) / 255.0;
+            blue += diffuse * visibility * (light.lightColor & 0xFF) / 255.0;
         }
         int r = shadeChannel((baseColor >> 16) & 0xFF, red);
         int g = shadeChannel((baseColor >> 8) & 0xFF, green);
@@ -189,39 +315,150 @@ public final class SceneRenderer {
         return (r << 16) | (g << 8) | b;
     }
 
-    private boolean isOccluded(Vec3d surface, Vec3d towardLight, double lightDistance,
-            SceneObject receiver, SceneObject light, List<SceneObject> objects, Camera camera) {
+    private double shadowVisibility(double surfaceX, double surfaceY, double surfaceZ,
+            double towardX, double towardY, double towardZ, double lightDistance,
+            SceneObject receiver, List<OccluderData> occluders) {
+        int samples = settings.shadowSamples;
+        if (samples == 1 || settings.shadowSoftness == 0.0) {
+            return isOccluded(surfaceX, surfaceY, surfaceZ, towardX, towardY, towardZ,
+                    lightDistance, receiver, occluders) ? 0.0 : 1.0;
+        }
+
+        double referenceX = Math.abs(towardY) < 0.9 ? 0.0 : 1.0;
+        double referenceY = Math.abs(towardY) < 0.9 ? 1.0 : 0.0;
+        double referenceZ = 0.0;
+        double tangentX = towardY * referenceZ - towardZ * referenceY;
+        double tangentY = towardZ * referenceX - towardX * referenceZ;
+        double tangentZ = towardX * referenceY - towardY * referenceX;
+        double tangentLength = Math.sqrt(tangentX * tangentX
+                + tangentY * tangentY + tangentZ * tangentZ);
+        tangentX /= tangentLength;
+        tangentY /= tangentLength;
+        tangentZ /= tangentLength;
+        double bitangentX = towardY * tangentZ - towardZ * tangentY;
+        double bitangentY = towardZ * tangentX - towardX * tangentZ;
+        double bitangentZ = towardX * tangentY - towardY * tangentX;
+        double angularRadius = Math.tan(Math.toRadians(settings.shadowSoftness));
+        int visibleSamples = 0;
+        for (int i = 0; i < samples; i++) {
+            double radius = Math.sqrt((i + 0.5) / samples) * angularRadius;
+            double angle = i * GOLDEN_ANGLE;
+            double tangentOffset = radius * Math.cos(angle);
+            double bitangentOffset = radius * Math.sin(angle);
+            double sampleX = towardX + tangentX * tangentOffset + bitangentX * bitangentOffset;
+            double sampleY = towardY + tangentY * tangentOffset + bitangentY * bitangentOffset;
+            double sampleZ = towardZ + tangentZ * tangentOffset + bitangentZ * bitangentOffset;
+            double sampleLength = Math.sqrt(sampleX * sampleX + sampleY * sampleY + sampleZ * sampleZ);
+            sampleX /= sampleLength;
+            sampleY /= sampleLength;
+            sampleZ /= sampleLength;
+            if (!isOccluded(surfaceX, surfaceY, surfaceZ, sampleX, sampleY, sampleZ,
+                    lightDistance, receiver, occluders)) {
+                visibleSamples++;
+            }
+        }
+        return (double) visibleSamples / samples;
+    }
+
+    private boolean isOccluded(double surfaceX, double surfaceY, double surfaceZ,
+            double directionX, double directionY, double directionZ, double lightDistance,
+            SceneObject receiver, List<OccluderData> occluders) {
         // Offset the ray from its surface to avoid self-intersection. Point-light
         // rays stop at the light; directional-light rays extend to infinity.
-        Vec3d origin = surface.add(towardLight.mul(SHADOW_EPSILON));
+        double originX = surfaceX + directionX * SHADOW_EPSILON;
+        double originY = surfaceY + directionY * SHADOW_EPSILON;
+        double originZ = surfaceZ + directionZ * SHADOW_EPSILON;
         double maxDistance = Double.isInfinite(lightDistance)
                 ? lightDistance : lightDistance - 2.0 * SHADOW_EPSILON;
         if (maxDistance <= 0.0) return false;
 
-        for (SceneObject object : objects) {
-            if (object == receiver || object == light) continue;
-            if (rayIntersectsBox(origin, towardLight, object, maxDistance, camera)) return true;
+        for (OccluderData occluder : occluders) {
+            if (occluder.object != receiver
+                    && rayIntersectsBox(originX, originY, originZ,
+                            directionX, directionY, directionZ, occluder, maxDistance)) {
+                return true;
+            }
         }
         return false;
     }
 
-    private boolean rayIntersectsBox(Vec3d origin, Vec3d direction,
-            SceneObject object, double maxDistance, Camera camera) {
-        // Transform the ray into box-local space and intersect its [-0.5, 0.5]
-        // bounds, preserving the object's rotation and non-uniform scale.
-        Vec3d localOrigin = camera.transformWorldPointToLocal(object, origin);
-        Vec3d localDirection = camera.transformWorldDirectionToLocal(object, direction);
-        double[] starts = {localOrigin.x, localOrigin.y, localOrigin.z};
-        double[] deltas = {localDirection.x, localDirection.y, localDirection.z};
+    private boolean rayIntersectsBox(double originX, double originY, double originZ,
+            double directionX, double directionY, double directionZ,
+            OccluderData box, double maxDistance) {
+        if (!rayIntersectsBounds(originX, originY, originZ,
+                directionX, directionY, directionZ, box, maxDistance)) {
+            return false;
+        }
+        double offsetX = originX - box.position.x;
+        double offsetY = originY - box.position.y;
+        double offsetZ = originZ - box.position.z;
+        double startX = offsetX * box.xx + offsetY * box.xy + offsetZ * box.xz;
+        double startY = offsetX * box.yx + offsetY * box.yy + offsetZ * box.yz;
+        double startZ = offsetX * box.zx + offsetY * box.zy + offsetZ * box.zz;
+        double deltaX = directionX * box.xx + directionY * box.xy + directionZ * box.xz;
+        double deltaY = directionX * box.yx + directionY * box.yy + directionZ * box.yz;
+        double deltaZ = directionX * box.zx + directionY * box.zy + directionZ * box.zz;
         double entry = 0.0;
         double exit = maxDistance;
-        for (int axis = 0; axis < 3; axis++) {
-            if (deltas[axis] == 0.0) {
-                if (starts[axis] < -0.5 || starts[axis] > 0.5) return false;
-                continue;
-            }
-            double first = (-0.5 - starts[axis]) / deltas[axis];
-            double second = (0.5 - starts[axis]) / deltas[axis];
+
+        if (deltaX == 0.0) {
+            if (startX < -0.5 || startX > 0.5) return false;
+        } else {
+            double first = (-0.5 - startX) / deltaX;
+            double second = (0.5 - startX) / deltaX;
+            entry = Math.max(entry, Math.min(first, second));
+            exit = Math.min(exit, Math.max(first, second));
+            if (entry > exit) return false;
+        }
+        if (deltaY == 0.0) {
+            if (startY < -0.5 || startY > 0.5) return false;
+        } else {
+            double first = (-0.5 - startY) / deltaY;
+            double second = (0.5 - startY) / deltaY;
+            entry = Math.max(entry, Math.min(first, second));
+            exit = Math.min(exit, Math.max(first, second));
+            if (entry > exit) return false;
+        }
+        if (deltaZ == 0.0) {
+            if (startZ < -0.5 || startZ > 0.5) return false;
+        } else {
+            double first = (-0.5 - startZ) / deltaZ;
+            double second = (0.5 - startZ) / deltaZ;
+            entry = Math.max(entry, Math.min(first, second));
+            exit = Math.min(exit, Math.max(first, second));
+            if (entry > exit) return false;
+        }
+        return exit > SHADOW_EPSILON && entry < maxDistance;
+    }
+
+    private boolean rayIntersectsBounds(double originX, double originY, double originZ,
+            double directionX, double directionY, double directionZ,
+            OccluderData bounds, double maxDistance) {
+        double entry = 0.0;
+        double exit = maxDistance;
+        if (directionX == 0.0) {
+            if (originX < bounds.minX || originX > bounds.maxX) return false;
+        } else {
+            double first = (bounds.minX - originX) / directionX;
+            double second = (bounds.maxX - originX) / directionX;
+            entry = Math.max(entry, Math.min(first, second));
+            exit = Math.min(exit, Math.max(first, second));
+            if (entry > exit) return false;
+        }
+        if (directionY == 0.0) {
+            if (originY < bounds.minY || originY > bounds.maxY) return false;
+        } else {
+            double first = (bounds.minY - originY) / directionY;
+            double second = (bounds.maxY - originY) / directionY;
+            entry = Math.max(entry, Math.min(first, second));
+            exit = Math.min(exit, Math.max(first, second));
+            if (entry > exit) return false;
+        }
+        if (directionZ == 0.0) {
+            if (originZ < bounds.minZ || originZ > bounds.maxZ) return false;
+        } else {
+            double first = (bounds.minZ - originZ) / directionZ;
+            double second = (bounds.maxZ - originZ) / directionZ;
             entry = Math.max(entry, Math.min(first, second));
             exit = Math.min(exit, Math.max(first, second));
             if (entry > exit) return false;
@@ -231,6 +468,12 @@ public final class SceneRenderer {
 
     private int shadeChannel(int channel, double intensity) {
         return (int) Math.max(0, Math.min(255, Math.round(channel * intensity)));
+    }
+
+    private Vec3d viewToWorld(Vec3d viewPoint, Camera camera,
+            Mat4x4 inverseYaw, Mat4x4 inversePitch) {
+        return inverseYaw.transformVec3d(inversePitch.transformVec3d(viewPoint))
+                .add(camera.position);
     }
 
     // Clips a polygon against a depth plane.
@@ -331,7 +574,11 @@ public final class SceneRenderer {
     // Fills a triangle pixel by pixel using barycentric weights. This technique lets
     // us know whether a point lies inside the triangle and what its interpolated z
     // depth should be.
-    private void fillTriangle(Vec3d p0, Vec3d p1, Vec3d p2, int color, int objectIndex) {
+    private void fillTriangle(Vec3d p0, Vec3d p1, Vec3d p2,
+            Vec3d view0, Vec3d view1, Vec3d view2,
+            Vec3d world0, Vec3d world1, Vec3d world2,
+            int baseColor, int flatColor, Vec3d normal, SceneObject receiver,
+            int objectIndex, List<LightData> lights, List<OccluderData> occluders) {
         int minX = (int) Math.max(0, Math.min(p0.x, Math.min(p1.x, p2.x)));
         int maxX = (int) Math.min(settings.width - 1,
                 Math.max(p0.x, Math.max(p1.x, p2.x)));
@@ -357,7 +604,25 @@ public final class SceneRenderer {
                     int index = x + y * settings.width;
                     if (z < zBuffer[index]) {
                         zBuffer[index] = z;
-                        pixels[index] = color;
+                        if (settings.perPixelLighting && receiver != null) {
+                            // Perspective-correct interpolation keeps shadow rays on the face.
+                            double q0 = w0 / view0.z;
+                            double q1 = w1 / view1.z;
+                            double q2 = w2 / view2.z;
+                            double reciprocalDepth = q0 + q1 + q2;
+                            double surfaceX = (q0 * world0.x + q1 * world1.x + q2 * world2.x)
+                                    / reciprocalDepth;
+                            double surfaceY = (q0 * world0.y + q1 * world1.y + q2 * world2.y)
+                                    / reciprocalDepth;
+                            double surfaceZ = (q0 * world0.z + q1 * world1.z + q2 * world2.z)
+                                    / reciprocalDepth;
+                            pixels[index] = applyLighting(baseColor,
+                                    normal.x, normal.y, normal.z,
+                                    surfaceX, surfaceY, surfaceZ,
+                                    receiver, lights, occluders);
+                        } else {
+                            pixels[index] = flatColor;
+                        }
                         objectBuffer[index] = objectIndex;
                     }
                 }

@@ -65,7 +65,7 @@ public final class StartupWindow extends JFrame {
 
         JPanel information = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 3));
         information.add(new JLabel("Developed by Arsal Abbas Mirza  |  "
-                + "Copyright © 2026 Arsal Abbas Mirza  |  Version: 0.4"));
+                + "Copyright © 2026 Arsal Abbas Mirza  |  Version: v0.5"));
         content.add(information, BorderLayout.SOUTH);
         setContentPane(content);
 
