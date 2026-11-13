@@ -141,7 +141,7 @@ Transform keyboard steps are 0.1 world units for movement and scale and 5
 degrees for rotation; hold Shift for 0.01 units or 0.5 degrees. The inspector
 remains available for precise transform values.
 
-## Suggested QoL improvements
+## Upcoming QoL improvements
 
 Potential follow-ups, in priority order:
 
@@ -158,6 +158,10 @@ Per-light source sizes, gamma-aware color handling, and ambient-occlusion-style
 contact shading are further candidates beyond the current global soft-shadow
 approximation. Render settings could later expose per-light source sizes and
 lighting diagnostics while retaining straightforward fast-quality presets.
+
+In general, a wide format of improvements and further features are planned for
+future versions, especially with a mind towards enhancing modularity and usability
+of the software while augmenting Lucid's performance optimization and introducing other capabilities.
 
 ## Scene file format
 
