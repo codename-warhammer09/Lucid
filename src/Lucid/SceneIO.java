@@ -96,6 +96,14 @@ public final class SceneIO {
                         + ex.getMessage(), ex);
             }
         }
+        SceneObject startMarker = scene.getStartMarker();
+        if (startMarker != null) {
+            try {
+                startMarker.transform = StartMarkerProjection.project(scene, startMarker.transform);
+            } catch (IllegalArgumentException ex) {
+                throw new IOException("Invalid START marker position: " + ex.getMessage(), ex);
+            }
+        }
         return scene;
     }
 

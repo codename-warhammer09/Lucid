@@ -13,9 +13,9 @@ The editor currently includes:
   an existing scene, or open the project documentation.
 - An initially empty scene with cube, thick-wall, directional-light, and
   point-light templates.
-- Two point-lit `.lucid` examples in `templates/`: a wide flat plain and a
-  roofed room/maze interior. User scenes placed in `scenes/` are listed at
-  startup.
+- Five built-in `.lucid` templates: a wide plain, roofed room maze, courtyard,
+  house interior, and obstacle course. User scenes placed in `scenes/` are
+  listed at startup.
 - A software-rendered viewport with perspective projection, near/far clipping,
   depth buffering, ambient and directional/point lighting with per-pixel
   diffuse shading and multi-sample opaque-mesh shadows.
@@ -28,6 +28,11 @@ The editor currently includes:
   render resolution. These settings are stored as user preferences, separately
   from scene files.
 - Scene creation, opening, and saving in a versioned `.lucid` text format.
+- A ground-projected START marker and a separate PLAY window with editing
+  disabled, human-height camera placement, existing movement/collision controls,
+  and Escape/close return behavior.
+- Independently configurable and persisted editor and PLAY solid background
+  colors.
 
 The implementation and controls below describe what exists now and will evolve
 as engine development continues.
@@ -58,8 +63,10 @@ folders; existing scenes can also be browsed from elsewhere. **View
 Documentation** opens [Documentation.md](Documentation.md) in the system's
 default application and leaves the startup window open.
 
-The startup window displays developer credit, copyright, and version
-information: Arsal Abbas Mirza, Copyright © 2026 Arsal Abbas Mirza, Version v0.5.
+The startup window displays the v0.6 highlights—five ready-to-play templates,
+surface-snapped START markers, a dedicated PLAY window, and configurable
+editor/PLAY backgrounds—along with developer credit and version information:
+Arsal Abbas Mirza, Copyright © 2026 Arsal Abbas Mirza, Version v0.6.
 
 ## Editor workflow
 
@@ -68,37 +75,45 @@ information: Arsal Abbas Mirza, Copyright © 2026 Arsal Abbas Mirza, Version v0.
    `.lucid` file. Save user scenes in `scenes/` to list them at startup; use
    **Browse...** to open a file stored elsewhere.
 2. Use **Add Cube**, **Add Wall**, **Add Directional Light**, or **Add Point
-   Light** to add an object to an empty scene.
-3. Use **Select** mode and turn off **Click to Camera** to select objects by
+   Light** to add an object to an empty scene. Use **Add START marker** above
+   geometry to create a ground-projected start point; only one marker is allowed.
+3. Choose **PLAY** to open a second window at the marker, 1.7 world units above
+   its ground point. The editor remains open but disabled behind PLAY. Move and
+   look with the existing camera controls; `Esc` or closing the window returns
+   to editing.
+4. Use **Select** mode and turn off **Click to Camera** to select objects by
    clicking them in the viewport; objects can also be selected from the scene
    list. The selection is outlined and its values appear in the Properties panel.
    With **Click to Camera** enabled (the default), a viewport click enters Camera
    mode; use **Select** in the toolbar to return.
-4. Edit the values and choose **Apply**. Positions and scales use world units;
+5. Edit the values and choose **Apply**. Positions and scales use world units;
    rotations are entered in degrees. Object colors accept six hexadecimal RGB
    digits, with or without a leading `#`. Enable **Camera collision enabled**
    on a cube or wall to stop the camera at its surface; it is off by default.
-5. Choose **File → Save**, **Save as...**, or **Open...** to persist and restore
+6. Choose **File → Save**, **Save as...**, or **Open...** to persist and restore
    scenes. Opening a scene validates the file before replacing the current
    scene. Invalid files are reported without discarding the current scene.
-6. Open **View → Render settings...** to adjust the viewport renderer. Settings
-   apply immediately when accepted and persist across editor launches; they are
-   not written into `.lucid` scene files.
+7. Open **View → Render settings...** to adjust the renderer and choose separate
+   editor and PLAY background colors. Settings apply immediately when accepted
+   and persist across editor launches; they are not written into `.lucid` files.
 
-The built-in [wide plain](templates/wide-plain.lucid) uses rotated wall objects
-as floor panels and point lights to demonstrate a broad open space. The
-[room/maze](templates/room-maze.lucid) example includes a roof, interior
-partitions, an entrance, camera-colliding walls, and point lights. Templates
-load as unsaved scenes so saving cannot overwrite the shipped examples. The
-wall template used by the editor is a box with a rectangular footprint and a
-small but non-zero thickness; its dimensions can be adjusted with the scale
-fields.
+The [wide plain](templates/wide-plain.lucid) is an open area with waypoints and
+lighting; the [room maze](templates/room-maze.lucid) has roofed rooms and
+partitions; the [courtyard](templates/courtyard.lucid) has garden walls,
+planters, and a pool; the [house interior](templates/house-interior.lucid)
+includes rooms and furniture; and the [obstacle course](templates/obstacle-course.lucid)
+has start/finish gates and slalom obstacles. All use the existing cube, wall,
+and light objects and include a START marker. Templates load as unsaved scenes
+so saving cannot overwrite shipped examples. The wall template used by the
+editor is a box with a rectangular footprint and a small but non-zero thickness;
+its dimensions can be adjusted with the scale fields.
 Directional lights use their rotation to aim the light. Point lights use
 their position, color, and intensity to illuminate nearby faces.
 The Render Settings panel controls global ambient light, point-light falloff,
 whether opaque geometry casts shadows, shadow softness and sample quality,
-lighting mode, field of view, and internal resolution. These settings persist as
-editor preferences and do not modify scene files. Per-pixel lighting evaluates
+lighting mode, field of view, internal resolution, and independent editor/PLAY
+background colors. These settings persist as editor preferences and do not
+modify scene files. Per-pixel lighting evaluates
 diffuse contribution and shadow visibility at each visible surface pixel, so a
 shadow edge can cross a face instead of darkening its entire triangle. The
 **Fast (per-face)** mode is available for lower CPU use. Softness controls the
@@ -126,6 +141,10 @@ do not act while editing a text field.
 | Camera mode: `E` / `Q` | Move up / down |
 | Camera mode: `Shift` | Move faster while held |
 | Camera mode: `R` | Reset the camera |
+| PLAY mode: `W` / `S`, `A` / `D` | Move and strafe |
+| PLAY mode: arrow keys | Turn and look |
+| PLAY mode: `E` / `Q`, `Shift` | Move vertically; move faster |
+| PLAY mode: `Esc` | Exit PLAY and return to the editor |
 | Select mode: `Left` / `Right` | Move selected object along X |
 | Select mode: `Up` / `Down` | Move selected object along Y |
 | Select mode: `Page Up` / `Page Down` | Move selected object along Z |
@@ -150,6 +169,8 @@ Potential follow-ups, in priority order:
 3. Optional position/rotation/scale snapping and configurable transform steps.
 4. Unsaved-scene indicators and prompts before discarding changes.
 5. Inspector reset/revert actions and an in-editor shortcut reference.
+6. A world grid and axis guides for spatial orientation.
+7. Optional edge antialiasing or supersampling, balanced against software-rendering cost.
 
 Potential rendering improvements include a world grid and axis guides for spatial
 orientation, followed by optional edge antialiasing or supersampling, which would
@@ -167,10 +188,11 @@ of the software while augmenting Lucid's performance optimization and introducin
 
 `.lucid` files are versioned Java Properties text files. Object entries store
 their ID, name, template type, transform, raster color, light settings, and
-camera-collision setting. Rotation values in the file are in degrees. Files
-without the collision property remain valid and default to collision off. The
-format is designed to be readable and does not require external serialization
-libraries.
+camera-collision setting. A `START_MARKER` entry stores its ground position and
+initial heading; loading projects it onto geometry below. Rotation values in
+the file are in degrees. Files without the collision property remain valid and
+default to collision off. The format is designed to be readable and does not
+require external serialization libraries.
 
 ## Project layout
 
@@ -180,6 +202,7 @@ src/
     Lucid.java          Application entry point
     StartupWindow.java  Startup choices, scene/template discovery, and docs
     SceneEditor.java    Editor window, scene list, and file actions
+    PlayWindow.java     Non-editable PLAY window and runtime controls
     ViewportPanel.java  Viewport input, camera movement, and display
     PropertiesPanel.java Object inspector and validation
     SceneRenderer.java  Software rendering, lighting, highlighting, and picking
@@ -189,6 +212,7 @@ src/
     Transform.java      Position, rotation, and scale
     MeshFactory.java    Reusable cube and wall geometry
     SceneIO.java        Versioned scene persistence
+    StartMarkerProjection.java Vertical surface projection for the START marker
     Camera.java         Camera state and object transforms
     Mat4x4.java         Matrix and projection operations
     Triangle.java       Triangle data

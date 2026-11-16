@@ -3,6 +3,7 @@ package Lucid;
 import java.awt.BorderLayout;
 import java.awt.GridLayout;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -27,12 +28,15 @@ public final class PropertiesPanel extends JPanel {
     private final JLabel colorLabel = new JLabel("Color (RGB hex)");
     private final Consumer<String> showStatus;
     private final Runnable afterApply;
+    private final Function<SceneObject, Transform> normalizeTransform;
     private SceneObject selected;
 
-    public PropertiesPanel(Consumer<String> showStatus, Runnable afterApply) {
+    public PropertiesPanel(Consumer<String> showStatus, Runnable afterApply,
+            Function<SceneObject, Transform> normalizeTransform) {
         super(new BorderLayout(8, 8));
         this.showStatus = showStatus;
         this.afterApply = afterApply;
+        this.normalizeTransform = normalizeTransform;
         setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         add(new JLabel("Properties"), BorderLayout.NORTH);
 
@@ -65,7 +69,7 @@ public final class PropertiesPanel extends JPanel {
         boolean hasSelection = object != null;
         selectionLabel.setText(hasSelection
                 ? object.type.name().replace('_', ' ') : "Select an object to edit its properties.");
-        collisionEnabled.setVisible(hasSelection && !object.isLight());
+        collisionEnabled.setVisible(hasSelection && object.isGeometry());
         nameField.setEnabled(hasSelection);
         setFieldsEnabled(positionFields, hasSelection);
         setFieldsEnabled(rotationFields, hasSelection);
@@ -73,7 +77,7 @@ public final class PropertiesPanel extends JPanel {
         colorField.setEnabled(hasSelection);
         lightColorField.setEnabled(hasSelection && object.isLight());
         intensityField.setEnabled(hasSelection && object.isLight());
-        collisionEnabled.setEnabled(hasSelection && !object.isLight());
+        collisionEnabled.setEnabled(hasSelection && object.isGeometry());
         if (!hasSelection) {
             nameField.setText("");
             colorField.setText("");
@@ -90,7 +94,8 @@ public final class PropertiesPanel extends JPanel {
         setVector(positionFields, object.transform.position, false);
         setVector(rotationFields, object.transform.rotation, true);
         setVector(scaleFields, object.transform.scale, false);
-        colorLabel.setText(object.isLight() ? "Marker color (RGB hex)" : "Raster color (RGB hex)");
+        colorLabel.setText(object.isLight() || object.type == SceneObject.Type.START_MARKER
+                ? "Marker color (RGB hex)" : "Raster color (RGB hex)");
         colorField.setText(String.format("#%06X", object.color));
         lightColorField.setText(String.format("#%06X", object.lightColor));
         intensityField.setText(Double.toString(object.intensity));
@@ -116,11 +121,12 @@ public final class PropertiesPanel extends JPanel {
                     ? parseColor(lightColorField.getText(), "Light color") : selected.lightColor;
             double intensity = selected.isLight()
                     ? Double.parseDouble(intensityField.getText().trim()) : selected.intensity;
-            boolean objectCollisionEnabled = selected.isLight()
+            boolean objectCollisionEnabled = !selected.isGeometry()
                     ? selected.collisionEnabled : collisionEnabled.isSelected();
             SceneObject validated = new SceneObject(selected.id, name, selected.type,
                     new Transform(position, rotation, scale), color, lightColor, intensity,
                     objectCollisionEnabled);
+            validated.transform = normalizeTransform.apply(validated);
             selected.name = validated.name;
             selected.transform = validated.transform;
             selected.color = validated.color;

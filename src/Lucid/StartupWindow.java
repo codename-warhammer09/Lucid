@@ -54,7 +54,12 @@ public final class StartupWindow extends JFrame {
         content.setBorder(javax.swing.BorderFactory.createEmptyBorder(24, 28, 20, 28));
         JLabel heading = new JLabel("Welcome to Lucid");
         heading.setFont(heading.getFont().deriveFont(24.0f));
-        content.add(heading, BorderLayout.NORTH);
+        JPanel welcome = new JPanel(new BorderLayout(0, 6));
+        welcome.add(heading, BorderLayout.NORTH);
+        welcome.add(new JLabel("<html>v0.6: five ready-to-play templates, surface-snapped "
+                + "START markers, a dedicated PLAY window, and configurable editor/PLAY "
+                + "backgrounds.</html>"), BorderLayout.CENTER);
+        content.add(welcome, BorderLayout.NORTH);
 
         JPanel choices = new JPanel(new GridLayout(2, 2, 12, 12));
         choices.add(choiceButton("Start from Blank Scene", this::startBlankScene));
@@ -65,7 +70,7 @@ public final class StartupWindow extends JFrame {
 
         JPanel information = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 3));
         information.add(new JLabel("Developed by Arsal Abbas Mirza  |  "
-                + "Copyright © 2026 Arsal Abbas Mirza  |  Version: v0.5"));
+                + "Copyright © 2026 Arsal Abbas Mirza  |  Version: v0.6"));
         content.add(information, BorderLayout.SOUTH);
         setContentPane(content);
 

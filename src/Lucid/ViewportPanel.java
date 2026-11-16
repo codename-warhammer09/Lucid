@@ -36,6 +36,7 @@ public final class ViewportPanel extends JPanel {
     private final Runnable objectChanged;
     private final Consumer<InputMode> inputModeChanged;
     private final Consumer<String> showStatus;
+    private final boolean showStartMarker;
     private String selectedId;
     private InputMode inputMode = InputMode.SELECT;
     private boolean clickToCamera = true;
@@ -55,6 +56,14 @@ public final class ViewportPanel extends JPanel {
     public ViewportPanel(Scene scene, Camera camera, SceneRenderer renderer,
             Runnable selectionChanged, Runnable objectChanged,
             Consumer<InputMode> inputModeChanged, Consumer<String> showStatus) {
+        this(scene, camera, renderer, selectionChanged, objectChanged,
+                inputModeChanged, showStatus, true);
+    }
+
+    public ViewportPanel(Scene scene, Camera camera, SceneRenderer renderer,
+            Runnable selectionChanged, Runnable objectChanged,
+            Consumer<InputMode> inputModeChanged, Consumer<String> showStatus,
+            boolean showStartMarker) {
         this.scene = scene;
         this.camera = camera;
         this.renderer = renderer;
@@ -62,6 +71,7 @@ public final class ViewportPanel extends JPanel {
         this.objectChanged = objectChanged;
         this.inputModeChanged = inputModeChanged;
         this.showStatus = showStatus;
+        this.showStartMarker = showStartMarker;
         setBackground(new Color(0x111522));
         setFocusable(true);
         setPreferredSize(new Dimension(640, 480));
@@ -173,7 +183,7 @@ public final class ViewportPanel extends JPanel {
                 : new Vec3d(0.0, 0.0, distance);
         double allowedFraction = 1.0;
         for (SceneObject object : scene.getObjects()) {
-            if (object.isLight() || !object.collisionEnabled) continue;
+            if (!object.isGeometry() || !object.collisionEnabled) continue;
 
             // Expanding the local box by the camera radius is a swept sphere
             // approximation that also accounts for each object's world scale.
@@ -233,7 +243,7 @@ public final class ViewportPanel extends JPanel {
     @Override
     protected void paintComponent(Graphics graphics) {
         super.paintComponent(graphics);
-        renderer.render(scene, camera, selectedId);
+        renderer.render(scene, camera, selectedId, showStartMarker);
         int renderWidth = renderer.getWidth();
         int renderHeight = renderer.getHeight();
         double scale = Math.min((double) getWidth() / renderWidth,
@@ -260,7 +270,7 @@ public final class ViewportPanel extends JPanel {
         if (scale <= 0.0 || x < left || x >= left + width || y < top || y >= top + height) {
             return;
         }
-        renderer.render(scene, camera, selectedId);
+        renderer.render(scene, camera, selectedId, showStartMarker);
         int imageX = (int) ((x - left) / scale);
         int imageY = (int) ((y - top) / scale);
         String picked = renderer.pick(scene, imageX, imageY);
@@ -292,13 +302,23 @@ public final class ViewportPanel extends JPanel {
         if (rotate && scale) return;
         double step = event.isShiftDown() ? 0.01 : 0.1;
         Transform transform = selected.transform;
+        Transform original = transform.copy();
         Vec3d target = scale ? transform.scale
                 : rotate ? transform.rotation : transform.position;
         double amount = direction * (rotate ? step * 50.0 * Math.PI / 180.0 : step);
         double value = component(target, axis) + amount;
         if (scale) value = Math.max(0.01, value);
         setComponent(target, axis, value);
-        transform.validate();
+        try {
+            transform.validate();
+            if (selected.type == SceneObject.Type.START_MARKER) {
+                selected.transform = StartMarkerProjection.project(scene, transform);
+            }
+        } catch (IllegalArgumentException ex) {
+            selected.transform = original;
+            showStatus.accept("Transform not applied: " + ex.getMessage());
+            return;
+        }
         objectChanged.run();
         showStatus.accept(rotate ? "Rotated " + selected.name + "."
                 : scale ? "Scaled " + selected.name + "."

@@ -110,6 +110,7 @@ public final class SceneRenderer {
     private Mat4x4 projection;
     private RenderSettings settings = RenderSettings.defaults();
     private boolean wireframeOverlayEnabled;
+    private int backgroundColor = settings.editorBackgroundColor;
 
     public SceneRenderer() {
         configure(settings);
@@ -127,6 +128,7 @@ public final class SceneRenderer {
         objectBuffer = new int[settings.width * settings.height];
         projection = Mat4x4.makeProjection(settings.fieldOfView,
                 (double) settings.width / settings.height, NEAR_PLANE, FAR_PLANE);
+        backgroundColor = settings.editorBackgroundColor;
     }
 
     public int getWidth() {
@@ -137,14 +139,26 @@ public final class SceneRenderer {
         return settings.height;
     }
 
+    public void setBackgroundColor(int color) {
+        if ((color & 0xFF000000) != 0) {
+            throw new IllegalArgumentException("Background color must be a 24-bit RGB value.");
+        }
+        backgroundColor = color;
+    }
+
     public void setWireframeOverlayEnabled(boolean enabled) {
         wireframeOverlayEnabled = enabled;
     }
 
     // This renders a whole frame from the given scene and camera.
     public BufferedImage render(Scene scene, Camera camera, String selectedId) {
+        return render(scene, camera, selectedId, true);
+    }
+
+    public BufferedImage render(Scene scene, Camera camera, String selectedId,
+            boolean showStartMarker) {
         List<SceneObject> objects = scene.getObjects();
-        Arrays.fill(pixels, 0x111522);
+        Arrays.fill(pixels, backgroundColor);
         Arrays.fill(zBuffer, Double.MAX_VALUE);
         Arrays.fill(objectBuffer, -1);
 
@@ -157,19 +171,21 @@ public final class SceneRenderer {
         List<LightData> lights = new ArrayList<>();
         List<OccluderData> occluders = new ArrayList<>();
         for (SceneObject object : objects) {
+            if (object.type == SceneObject.Type.START_MARKER) continue;
             if (object.isLight()) {
                 Vec3d direction = object.type == SceneObject.Type.DIRECTIONAL_LIGHT
                         ? camera.transformLocalDirection(
                                 new Vec3d(0.0, 0.0, -1.0), object.transform.rotation).normalize()
                         : null;
                 lights.add(new LightData(object, direction));
-            } else {
+            } else if (object.isGeometry()) {
                 occluders.add(new OccluderData(object, camera));
             }
         }
         for (int i = 0; i < objects.size(); i++) {
             SceneObject object = objects.get(i);
-            if (!object.isLight()) {
+            if (object.isGeometry() || (showStartMarker
+                    && object.type == SceneObject.Type.START_MARKER)) {
                 renderObject(object, i, lights, occluders, camera, yaw, pitch,
                         inverseYaw, inversePitch,
                         selectedId != null && selectedId.equals(object.id));
@@ -201,6 +217,14 @@ public final class SceneRenderer {
             List<OccluderData> occluders,
             Camera camera, Mat4x4 yaw, Mat4x4 pitch,
             Mat4x4 inverseYaw, Mat4x4 inversePitch, boolean selected) {
+        if (object.type == SceneObject.Type.START_MARKER) {
+            Vec3d markerPosition = object.transform.position;
+            object = new SceneObject(object.id, object.name, object.type,
+                    new Transform(new Vec3d(markerPosition.x,
+                            markerPosition.y + object.transform.scale.y * 0.5 + 0.005,
+                            markerPosition.z), object.transform.rotation, object.transform.scale),
+                    object.color, object.lightColor, object.intensity);
+        }
         Vec3d[] worldVertices = MeshFactory.getBoxVertices();
         Vec3d[] viewVertices = new Vec3d[worldVertices.length];
         for (int i = 0; i < worldVertices.length; i++) {
@@ -224,7 +248,7 @@ public final class SceneRenderer {
             }
             clipped = clipPolygon(clipped, NEAR_PLANE, true);
             clipped = clipPolygon(clipped, FAR_PLANE, false);
-            int faceColor = object.isLight()
+            int faceColor = object.isLight() || object.type == SceneObject.Type.START_MARKER
                     ? object.color
                     : settings.perPixelLighting ? object.color
                             : applyLighting(object.color, normal, world0, object,
@@ -238,7 +262,9 @@ public final class SceneRenderer {
                         viewToWorld(view0, camera, inverseYaw, inversePitch),
                         viewToWorld(view1, camera, inverseYaw, inversePitch),
                         viewToWorld(view2, camera, inverseYaw, inversePitch),
-                        object.color, faceColor, normal, object.isLight() ? null : object,
+                        object.color, faceColor, normal,
+                        object.isLight() || object.type == SceneObject.Type.START_MARKER
+                                ? null : object,
                         objectIndex, lights, occluders);
             }
         }

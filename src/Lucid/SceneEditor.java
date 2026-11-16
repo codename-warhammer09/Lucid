@@ -1,6 +1,7 @@
 package Lucid;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.KeyboardFocusManager;
 import java.awt.event.ActionEvent;
@@ -17,6 +18,7 @@ import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JCheckBoxMenuItem;
+import javax.swing.JColorChooser;
 import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
@@ -64,10 +66,12 @@ public final class SceneEditor extends JFrame {
     private final JLabel status = new JLabel("Ready — add an object to begin.");
     private final PropertiesPanel properties;
     private final ViewportPanel viewport;
+    private final Timer editorTimer;
     private String selectedId;
     private Path currentFile;
     private boolean refreshingList;
     private RenderSettings renderSettings;
+    private PlayWindow playWindow;
 
     public SceneEditor() {
         this(new Scene(), null, false);
@@ -97,7 +101,8 @@ public final class SceneEditor extends JFrame {
         setSize(1280, 800);
         setLocationRelativeTo(null);
 
-        properties = new PropertiesPanel(this::setStatus, this::refreshObjectList);
+        properties = new PropertiesPanel(this::setStatus, this::refreshObjectList,
+                this::normalizeObjectTransform);
         viewport = new ViewportPanel(scene, camera, renderer, this::selectionChanged,
                 this::refreshObjectList, this::inputModeChanged, this::setStatus);
         viewport.setClickToCamera(clickToCameraCheck.isSelected());
@@ -129,11 +134,11 @@ public final class SceneEditor extends JFrame {
 
         // The editor runs a small animation loop to update the camera and repaint the
         // viewport continuously while the user navigates the scene.
-        Timer timer = new Timer(16, event -> {
+        editorTimer = new Timer(16, event -> {
             viewport.updateCamera();
             viewport.repaint();
         });
-        timer.start();
+        editorTimer.start();
     }
 
     // The workspace is split into three regions: the list of scene objects, the main
@@ -189,6 +194,7 @@ public final class SceneEditor extends JFrame {
         addButton(toolbar, "Wall", SceneObject.Type.WALL);
         addButton(toolbar, "Directional light", SceneObject.Type.DIRECTIONAL_LIGHT);
         addButton(toolbar, "Point light", SceneObject.Type.POINT_LIGHT);
+        addButton(toolbar, "START marker", SceneObject.Type.START_MARKER);
         toolbar.addSeparator();
         ButtonGroup inputModes = new ButtonGroup();
         inputModes.add(selectModeButton);
@@ -200,6 +206,7 @@ public final class SceneEditor extends JFrame {
         toolbar.addSeparator();
         toolbar.add(button("Delete", this::deleteSelected));
         toolbar.add(button("Properties (P)", this::focusProperties));
+        toolbar.add(button("PLAY", this::startPlayMode));
         return toolbar;
     }
 
@@ -218,6 +225,7 @@ public final class SceneEditor extends JFrame {
         create.add(menuItem("Directional light", event ->
                 addObject(SceneObject.Type.DIRECTIONAL_LIGHT)));
         create.add(menuItem("Point light", event -> addObject(SceneObject.Type.POINT_LIGHT)));
+        create.add(menuItem("START marker", event -> addObject(SceneObject.Type.START_MARKER)));
         bar.add(create);
 
         JMenu view = new JMenu("View");
@@ -230,6 +238,7 @@ public final class SceneEditor extends JFrame {
         view.add(clickToCameraMenuItem);
         view.add(wireframeOverlayMenuItem);
         view.add(menuItem("Render settings...", event -> showRenderSettings()));
+        view.add(menuItem("PLAY", event -> startPlayMode()));
         bar.add(view);
         return bar;
     }
@@ -258,12 +267,20 @@ public final class SceneEditor extends JFrame {
         switch (type) {
             case CUBE: baseName = "Cube"; break;
             case WALL: baseName = "Wall"; break;
+            case START_MARKER: baseName = "START marker"; break;
             case DIRECTIONAL_LIGHT: baseName = "Directional Light"; break;
             case POINT_LIGHT: baseName = "Point Light"; break;
             default: throw new IllegalStateException("Unsupported template: " + type);
         }
         int ordinal = 1;
         String objectName = baseName + " " + ordinal;
+        if (type == SceneObject.Type.START_MARKER) {
+            if (scene.getStartMarker() != null) {
+                setStatus("This scene already has a START marker.");
+                return;
+            }
+            objectName = "START marker";
+        }
         while (hasObjectNamed(objectName)) {
             objectName = baseName + " " + ++ordinal;
         }
@@ -287,11 +304,23 @@ public final class SceneEditor extends JFrame {
             case POINT_LIGHT:
                 scale = new Vec3d(0.35, 0.35, 0.35);
                 break;
+            case START_MARKER:
+                scale = new Vec3d(0.4, 0.08, 0.4);
+                break;
             default: throw new IllegalStateException("Unsupported template: " + type);
         }
         SceneObject object = SceneObject.create(objectName, type,
                 new Transform(position, rotation, scale));
         if (type == SceneObject.Type.POINT_LIGHT) object.intensity = 5.0;
+        if (type == SceneObject.Type.START_MARKER) {
+            object.color = 0xFFD43B;
+            try {
+                object.transform = StartMarkerProjection.project(scene, object.transform);
+            } catch (IllegalArgumentException ex) {
+                showError("Could not place START marker: " + ex.getMessage());
+                return;
+            }
+        }
         scene.add(object);
         selectedId = object.id;
         refreshObjectList();
@@ -368,6 +397,16 @@ public final class SceneEditor extends JFrame {
                 : renderSettings.shadowSamples == 4 ? 1 : 2);
         shadowSamples.setToolTipText(
                 "More samples smooth shadow edges but increase software-rendering cost.");
+        int[] editorBackground = {renderSettings.editorBackgroundColor};
+        int[] playBackground = {renderSettings.playBackgroundColor};
+        JButton editorBackgroundButton = backgroundColorButton(
+                "Choose editor background", editorBackground[0]);
+        JButton playBackgroundButton = backgroundColorButton(
+                "Choose PLAY background", playBackground[0]);
+        editorBackgroundButton.addActionListener(event -> chooseBackgroundColor(
+                "Editor Background", editorBackground, editorBackgroundButton));
+        playBackgroundButton.addActionListener(event -> chooseBackgroundColor(
+                "PLAY Background", playBackground, playBackgroundButton));
         JComboBox<String> resolution = new JComboBox<>(new String[] {
             "320 x 240 (Fast)",
             "640 x 480",
@@ -392,6 +431,10 @@ public final class SceneEditor extends JFrame {
         form.add(shadowSoftness);
         form.add(new JLabel("Shadow sample quality"));
         form.add(shadowSamples);
+        form.add(new JLabel("Editor background"));
+        form.add(editorBackgroundButton);
+        form.add(new JLabel("PLAY background"));
+        form.add(playBackgroundButton);
         form.add(new JLabel("Defaults: per-pixel, hard shadows"));
         form.add(new JLabel("Per-pixel and more samples cost more"));
 
@@ -409,7 +452,8 @@ public final class SceneEditor extends JFrame {
                     lightingQuality.getSelectedIndex() == 1,
                     shadowSoftness.getValue(),
                     shadowSamples.getSelectedIndex() == 0 ? 1
-                            : shadowSamples.getSelectedIndex() == 1 ? 4 : 8);
+                            : shadowSamples.getSelectedIndex() == 1 ? 4 : 8,
+                    editorBackground[0], playBackground[0]);
             updated.save(editorPreferences);
             renderSettings = updated;
             renderer.configure(renderSettings);
@@ -422,6 +466,58 @@ public final class SceneEditor extends JFrame {
         } catch (SecurityException | IllegalStateException ex) {
             showRenderSettingsError("Could not persist render settings: " + ex.getMessage());
         }
+    }
+
+    private JButton backgroundColorButton(String title, int color) {
+        JButton button = new JButton(String.format("#%06X", color));
+        button.setToolTipText(title);
+        button.setBackground(new Color(color));
+        return button;
+    }
+
+    private void chooseBackgroundColor(String title, int[] selectedColor, JButton button) {
+        Color chosen = JColorChooser.showDialog(this, title, new Color(selectedColor[0]));
+        if (chosen == null) return;
+        selectedColor[0] = chosen.getRGB() & 0xFFFFFF;
+        button.setText(String.format("#%06X", selectedColor[0]));
+        button.setBackground(chosen);
+    }
+
+    private Transform normalizeObjectTransform(SceneObject object) {
+        return object.type == SceneObject.Type.START_MARKER
+                ? StartMarkerProjection.project(scene, object.transform)
+                : object.transform;
+    }
+
+    private void startPlayMode() {
+        if (playWindow != null) {
+            playWindow.toFront();
+            return;
+        }
+        SceneObject startMarker = scene.getStartMarker();
+        if (startMarker == null) {
+            showError("Add a START marker on a surface before entering PLAY.");
+            return;
+        }
+        Camera playCamera = new Camera();
+        playCamera.position.x = startMarker.transform.position.x;
+        playCamera.position.y = startMarker.transform.position.y + 1.7;
+        playCamera.position.z = startMarker.transform.position.z;
+        playCamera.yaw = startMarker.transform.rotation.y;
+        playCamera.pitch = 0.0;
+        playWindow = new PlayWindow(scene, playCamera, renderSettings, this::playModeClosed);
+        editorTimer.stop();
+        setEnabled(false);
+        playWindow.start();
+    }
+
+    private void playModeClosed() {
+        playWindow = null;
+        setEnabled(true);
+        setVisible(true);
+        toFront();
+        editorTimer.start();
+        viewport.requestFocusInWindow();
     }
 
     private void showRenderSettingsError(String message) {

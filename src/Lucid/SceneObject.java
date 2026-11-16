@@ -13,6 +13,7 @@ public final class SceneObject {
     public enum Type {
         CUBE,
         WALL,
+        START_MARKER,
         DIRECTIONAL_LIGHT,
         POINT_LIGHT
     }
@@ -68,7 +69,7 @@ public final class SceneObject {
     // scene objects default to a green tone.
     public static SceneObject create(String name, Type type, Transform transform) {
         int color = type == Type.DIRECTIONAL_LIGHT || type == Type.POINT_LIGHT
-                ? 0xFFD060 : 0x00FF88;
+                ? 0xFFD060 : type == Type.START_MARKER ? 0xFFD43B : 0x00FF88;
         return new SceneObject(UUID.randomUUID().toString(), name, type, transform,
                 color, 0xFFFFFF, 1.0);
     }
@@ -78,5 +79,9 @@ public final class SceneObject {
     // the scene manually.
     public boolean isLight() {
         return type == Type.DIRECTIONAL_LIGHT || type == Type.POINT_LIGHT;
+    }
+
+    public boolean isGeometry() {
+        return type == Type.CUBE || type == Type.WALL;
     }
 }

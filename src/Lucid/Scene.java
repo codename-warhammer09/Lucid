@@ -29,6 +29,9 @@ public final class Scene {
         if (findById(object.id) != null) {
             throw new IllegalArgumentException("Scene already contains object ID " + object.id + ".");
         }
+        if (object.type == SceneObject.Type.START_MARKER && getStartMarker() != null) {
+            throw new IllegalArgumentException("A scene can contain only one START marker.");
+        }
         objects.add(object);
     }
 
@@ -43,6 +46,13 @@ public final class Scene {
         if (id == null) return null;
         for (SceneObject object : objects) {
             if (object.id.equals(id)) return object;
+        }
+        return null;
+    }
+
+    public SceneObject getStartMarker() {
+        for (SceneObject object : objects) {
+            if (object.type == SceneObject.Type.START_MARKER) return object;
         }
         return null;
     }

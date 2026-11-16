@@ -21,16 +21,26 @@ public final class RenderSettings {
     public final boolean perPixelLighting;
     public final double shadowSoftness;
     public final int shadowSamples;
+    public final int editorBackgroundColor;
+    public final int playBackgroundColor;
 
     public RenderSettings(double ambientLight, boolean shadowsEnabled, double fieldOfView,
             double pointLightFalloff, int width, int height) {
         this(ambientLight, shadowsEnabled, fieldOfView, pointLightFalloff, width, height,
-                true, 3.0, 1);
+                true, 3.0, 1, 0x111522, 0x000000);
     }
 
     public RenderSettings(double ambientLight, boolean shadowsEnabled, double fieldOfView,
             double pointLightFalloff, int width, int height, boolean perPixelLighting,
             double shadowSoftness, int shadowSamples) {
+        this(ambientLight, shadowsEnabled, fieldOfView, pointLightFalloff, width, height,
+                perPixelLighting, shadowSoftness, shadowSamples, 0x111522, 0x000000);
+    }
+
+    public RenderSettings(double ambientLight, boolean shadowsEnabled, double fieldOfView,
+            double pointLightFalloff, int width, int height, boolean perPixelLighting,
+            double shadowSoftness, int shadowSamples, int editorBackgroundColor,
+            int playBackgroundColor) {
         if (!Double.isFinite(ambientLight) || ambientLight < 0.0 || ambientLight > 1.0) {
             throw new IllegalArgumentException("Ambient light must be between 0 and 1.");
         }
@@ -50,6 +60,10 @@ public final class RenderSettings {
         if (shadowSamples != 1 && shadowSamples != 4 && shadowSamples != 8) {
             throw new IllegalArgumentException("Shadow samples must be 1, 4, or 8.");
         }
+        if ((editorBackgroundColor & 0xFF000000) != 0
+                || (playBackgroundColor & 0xFF000000) != 0) {
+            throw new IllegalArgumentException("Background colors must be 24-bit RGB values.");
+        }
         this.ambientLight = ambientLight;
         this.shadowsEnabled = shadowsEnabled;
         this.fieldOfView = fieldOfView;
@@ -59,6 +73,8 @@ public final class RenderSettings {
         this.perPixelLighting = perPixelLighting;
         this.shadowSoftness = shadowSoftness;
         this.shadowSamples = shadowSamples;
+        this.editorBackgroundColor = editorBackgroundColor;
+        this.playBackgroundColor = playBackgroundColor;
     }
 
     public static RenderSettings defaults() {
@@ -76,7 +92,9 @@ public final class RenderSettings {
                 preferences.getInt("renderHeight", defaults.height),
                 preferences.getBoolean("perPixelLighting", defaults.perPixelLighting),
                 preferences.getDouble("shadowSoftness", defaults.shadowSoftness),
-                preferences.getInt("shadowSamples", defaults.shadowSamples));
+                preferences.getInt("shadowSamples", defaults.shadowSamples),
+                preferences.getInt("editorBackgroundColor", defaults.editorBackgroundColor),
+                preferences.getInt("playBackgroundColor", defaults.playBackgroundColor));
     }
 
     public void save(Preferences preferences) throws java.util.prefs.BackingStoreException {
@@ -89,6 +107,8 @@ public final class RenderSettings {
         preferences.putBoolean("perPixelLighting", perPixelLighting);
         preferences.putDouble("shadowSoftness", shadowSoftness);
         preferences.putInt("shadowSamples", shadowSamples);
+        preferences.putInt("editorBackgroundColor", editorBackgroundColor);
+        preferences.putInt("playBackgroundColor", playBackgroundColor);
         preferences.flush();
     }
 
